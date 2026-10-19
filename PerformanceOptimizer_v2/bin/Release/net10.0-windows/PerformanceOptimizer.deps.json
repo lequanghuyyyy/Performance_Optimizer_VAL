@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "PerformanceOptimizer/2.0.0": {
+        "runtime": {
+          "PerformanceOptimizer.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "PerformanceOptimizer/2.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

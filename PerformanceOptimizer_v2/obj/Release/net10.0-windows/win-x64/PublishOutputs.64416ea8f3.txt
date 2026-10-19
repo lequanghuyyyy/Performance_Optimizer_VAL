@@ -1,0 +1,2 @@
+C:\Users\ASL-R&D-IT\Desktop\Tool\PerformanceOptimizer_v2\publish\PerformanceOptimizer.pdb
+C:\Users\ASL-R&D-IT\Desktop\Tool\PerformanceOptimizer_v2\publish\PerformanceOptimizer.exe
