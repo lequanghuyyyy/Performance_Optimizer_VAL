@@ -1,0 +1,15 @@
+VoiceStudio mobile dependency notices
+
+Inter 4.1 variable font: Copyright 2016 The Inter Project Authors.
+Source: https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
+SIL Open Font License 1.1: included in OFL.txt.
+
+AndroidX (Compose, Material 3, CameraX, Lifecycle, Navigation, DataStore,
+WorkManager, Media3), Kotlin, kotlinx.coroutines, kotlinx.serialization,
+OkHttp/Okio and ZXing core: Apache License 2.0.
+AndroidX: https://android.googlesource.com/platform/frameworks/support
+Kotlin: https://github.com/JetBrains/kotlin
+OkHttp/Okio: https://github.com/square/okhttp and https://github.com/square/okio
+ZXing: https://github.com/zxing/zxing
+Apache License 2.0: included in Apache-2.0.txt.
+No analytics, crash reporting or remote notification dependencies are present.

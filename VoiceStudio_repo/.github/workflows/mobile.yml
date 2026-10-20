@@ -1,0 +1,142 @@
+# Mobile — native iOS and Android companion apps (mobile/contract/SPEC.md).
+#
+# Both apps build from generated inputs (theme tokens, OpenAPI, Electron locale
+# catalogs), so a change to any of those re-runs this workflow too. Contract
+# drift itself is caught by tests/test_mobile_contract.py in ci.yml.
+
+name: mobile
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "electron/src/renderer/src/i18n/locales/**"
+      - "electron/src/shared/languages.json"
+      - "package.json"
+      - ".github/workflows/mobile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - "electron/src/renderer/src/i18n/locales/**"
+      - "electron/src/shared/languages.json"
+      - "package.json"
+      - ".github/workflows/mobile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: mobile/android
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Validates the committed wrapper jar and caches Gradle state.
+      - uses: gradle/actions/setup-gradle@42ebad84b0585498c0413b0967cf4e80ec0e1d19 # v4.4.1
+
+      - name: SDK location
+        run: printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+
+      - name: Build, unit tests, lint
+        run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest testDebugUnitTest lint
+
+      - name: Upload reports on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-reports
+          path: mobile/android/**/build/reports/
+          retention-days: 7
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: VoiceStudioKit tests
+        working-directory: mobile/ios/VoiceStudioKit
+        run: swift test
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec mobile/ios/VoiceStudio/project.yml
+
+      - name: Build app and UI tests (simulator)
+        run: |
+          # First available iPhone simulator; runner images change names over time.
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devs = json.load(sys.stdin)["devices"]
+          print(next(d["udid"] for rt, ds in devs.items() if "iOS" in rt for d in ds if d["name"].startswith("iPhone")))')
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          # Boot and wait before testing: a runner that starts XCTest against a
+          # still-booting simulator fails with "test runner failed to initialize
+          # for UI testing" (kAXErrorCannotComplete).
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcodebuild -project mobile/ios/VoiceStudio/VoiceStudio.xcodeproj \
+            -scheme VoiceStudio -destination "id=$UDID" \
+            CODE_SIGNING_ALLOWED=NO build-for-testing
+
+      - name: UI smoke test
+        run: |
+          xcodebuild -project mobile/ios/VoiceStudio/VoiceStudio.xcodeproj \
+            -scheme VoiceStudio -destination "id=$SIM_UDID" \
+            -resultBundlePath "$RUNNER_TEMP/ui.xcresult" \
+            CODE_SIGNING_ALLOWED=NO test-without-building
+
+      # ScreenshotTour keeps a screenshot of every screen; export them for review.
+      - name: Export UI screenshots
+        if: always()
+        run: |
+          [ -d "$RUNNER_TEMP/ui.xcresult" ] || exit 0
+          mkdir -p "$RUNNER_TEMP/shots"
+          xcrun xcresulttool export attachments --path "$RUNNER_TEMP/ui.xcresult" --output-path "$RUNNER_TEMP/shots"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: ios-screenshots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Unsigned device build for maintainers to sideload onto their own iPhone
+      # (it is signed on install with their Apple ID; see docs/mobile.md). Not a
+      # release artifact.
+      - name: Unsigned iPhone build
+        run: |
+          xcodebuild -project mobile/ios/VoiceStudio/VoiceStudio.xcodeproj \
+            -scheme VoiceStudio -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/device" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/device/Build/Products/Release-iphoneos/VoiceStudio.app" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$RUNNER_TEMP/VoiceStudio-unsigned.ipa" Payload)
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: VoiceStudio-ios-unsigned
+          path: ${{ runner.temp }}/VoiceStudio-unsigned.ipa
+          retention-days: 7

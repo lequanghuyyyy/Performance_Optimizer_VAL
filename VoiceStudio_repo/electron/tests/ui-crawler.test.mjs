@@ -1,0 +1,28 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const dir = dirname(fileURLToPath(import.meta.url));
+const crawler = readFileSync(join(dir, 'ui-crawler.mjs'), 'utf8');
+const ci = readFileSync(join(dir, '../../.github/workflows/ci.yml'), 'utf8');
+
+const job = ci.match(/\n {2}ui-crawler:\n([\s\S]*?)\n {2}[\w-]+:\n/)[1];
+
+test('CI crawls every fault mode in one job', () => {
+  // A matrix would multiply runner jobs per push; the crawler runs the modes concurrently itself.
+  assert.doesNotMatch(job, /strategy:|matrix\./, 'ui-crawler must stay a single job');
+  // Narrowing the modes or routes in CI would silently skip the faults this job exists for.
+  assert.doesNotMatch(job, /VOICESTUDIO_CRAWL_(MODES|ROUTES|SHARD)/);
+  assert.match(crawler, /const MODES = \['fixture', 'http-500', 'network-error', 'bad-json'\]/);
+});
+
+test('the single job leaves room for a full crawl', () => {
+  const minutes = Number(job.match(/timeout-minutes: (\d+)/)[1]);
+  assert.ok(minutes >= 30, `timeout-minutes ${minutes} is too short for every mode and route`);
+});
+
+test('crawler findings are fixed, not allowlisted', () => {
+  assert.match(crawler, /export const KNOWN_FINDINGS = \{\};/);
+});
