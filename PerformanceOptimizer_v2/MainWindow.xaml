@@ -226,6 +226,20 @@
 					<StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
 						<!-- Nút Dọn RAM Nhanh (Header) -->
 
+						<!-- Nút Vanguard Safe Mode -->
+						<Button Click="BtnToggleVanguardSafe_Click" Margin="0,0,12,0" Cursor="Hand" ToolTip="Bấm để BẬT/TẮT chế độ bảo vệ Riot Vanguard (Giữ HVCI/VBS để không bị lỗi VAN9005 trên Win 11)">
+							<Button.Template>
+								<ControlTemplate TargetType="Button">
+									<Border Background="{Binding VanguardSafeModeBackgroundBrush}" BorderBrush="{Binding VanguardSafeModeBorderBrush}" BorderThickness="1.5" CornerRadius="8" Padding="12,8">
+										<StackPanel Orientation="Horizontal">
+											<TextBlock Text="{Binding VanguardSafeModeIcon}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+											<TextBlock Text="{Binding VanguardSafeModeBadge}" FontSize="11" FontWeight="Bold" Foreground="{Binding VanguardSafeModeTextBrush}" VerticalAlignment="Center"/>
+										</StackPanel>
+									</Border>
+								</ControlTemplate>
+							</Button.Template>
+						</Button>
+
 						<!-- Nút Thông Số Máy -->
 						<Button x:Name="BtnOpenSpecs" Click="BtnOpenSpecs_Click" Margin="0,0,12,0" Cursor="Hand">
 							<Button.Template>

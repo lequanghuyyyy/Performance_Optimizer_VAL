@@ -76,8 +76,12 @@ namespace PerformanceOptimizer.ViewModels
                     }
                 }
 
+                int quantum = NativeTweakService.GetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\PriorityControl", "Win32PrioritySeparation", 2);
+                int throttling = NativeTweakService.GetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Power\PowerThrottling", "PowerThrottlingOff", 0);
                 int hvci = NativeTweakService.GetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity", "Enabled", 1);
-                IsFpsBoostActive = (hvci == 0);
+                
+                // Nhận diện thông minh: FPS Boost được coi là active nếu đã tối ưu Quantum & PowerThrottling (kể cả khi giữ HVCI cho Vanguard)
+                IsFpsBoostActive = (quantum == 38 && throttling == 1) || (hvci == 0 && quantum == 38);
             }
             catch { }
         }
@@ -186,6 +190,37 @@ namespace PerformanceOptimizer.ViewModels
             }
         }
 
+        private bool _isVanguardSafeMode = true;
+        public bool IsVanguardSafeMode
+        {
+            get => _isVanguardSafeMode;
+            set
+            {
+                if (_isVanguardSafeMode != value)
+                {
+                    _isVanguardSafeMode = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(VanguardSafeModeBadge));
+                    OnPropertyChanged(nameof(VanguardSafeModeBorderBrush));
+                    OnPropertyChanged(nameof(VanguardSafeModeBackgroundBrush));
+                    OnPropertyChanged(nameof(VanguardSafeModeTextBrush));
+                    OnPropertyChanged(nameof(VanguardSafeModeIcon));
+                    OnPropertyChanged(nameof(FpsBoostTooltip));
+                    OnPropertyChanged(nameof(FpsBoostModeText));
+                }
+            }
+        }
+        public string VanguardSafeModeBadge => _isVanguardSafeMode ? "VANGUARD SAFE: BẬT" : "VANGUARD SAFE: TẮT (CẢNH BÁO)";
+        public string VanguardSafeModeBorderBrush => _isVanguardSafeMode ? "#0284C7" : "#EF4444";
+        public string VanguardSafeModeBackgroundBrush => _isVanguardSafeMode ? "#16253B" : "#2A1215";
+        public string VanguardSafeModeTextBrush => _isVanguardSafeMode ? "#38BDF8" : "#F87171";
+        public string VanguardSafeModeIcon => _isVanguardSafeMode ? "🛡️" : "⚠️";
+
+        public void ToggleVanguardSafeMode()
+        {
+            IsVanguardSafeMode = !IsVanguardSafeMode;
+        }
+
         public bool IsFpsBoostActive
         {
             get => _isFpsBoostActive;
@@ -210,8 +245,8 @@ namespace PerformanceOptimizer.ViewModels
             }
         }
 
-        public string FpsBoostModeText => _isFpsBoostActive ? "ĐANG BẬT" : "ĐANG TẮT";
-        public string FpsBoostStatusBadge => _isFpsBoostActive ? "eSports Turbo" : "An Toàn / Mát Máy";
+        public string FpsBoostModeText => _isFpsBoostActive ? (_isVanguardSafeMode ? "BẬT (Vanguard Safe)" : "BẬT (eSports)") : "ĐANG TẮT";
+        public string FpsBoostStatusBadge => _isFpsBoostActive ? (_isVanguardSafeMode ? "Valorant Turbo" : "eSports Turbo") : "An Toàn / Mát Máy";
         public string FpsBoostButtonBrush => _isFpsBoostActive ? "#241203" : "#0F172A";
         public string FpsBoostBorderBrush => _isFpsBoostActive ? "#F59E0B" : "#334155";
         public string FpsBoostTextBrush => _isFpsBoostActive ? "#FBBF24" : "#64748B";
@@ -222,8 +257,10 @@ namespace PerformanceOptimizer.ViewModels
         public System.Windows.HorizontalAlignment FpsBoostSwitchAlignment => 
             _isFpsBoostActive ? System.Windows.HorizontalAlignment.Right : System.Windows.HorizontalAlignment.Left;
         public string FpsBoostTooltip => _isFpsBoostActive 
-            ? "⚡ Chế độ FPS Boost [ĐANG BẬT]: Xung Turbo 100%, Core Isolation tắt để bung 5-15% FPS. Bấm vào để TẮT và chuyển về chế độ an toàn."
-            : "🛡️ Chế độ FPS Boost [ĐANG TẮT]: Máy chạy ở chế độ bảo mật an toàn, mát mẻ. Bấm vào để BẬT chế độ eSports Turbo cho Game.";
+            ? (_isVanguardSafeMode 
+                ? "⚡ Chế độ FPS Boost [Vanguard Safe ĐANG BẬT]: Xung 100% Turbo Boost, Win32Priority 38, dọn RAM. HVCI bảo vệ an toàn cho Valorant. Bấm để TẮT."
+                : "⚡ Chế độ FPS Boost [eSports ĐANG BẬT]: Xung Turbo 100%, Core Isolation tắt để bung 5-15% FPS. Bấm để TẮT.")
+            : "🛡️ Chế độ FPS Boost [ĐANG TẮT]: Máy chạy ở chế độ cân bằng an toàn. Bấm để BẬT chế độ Gaming Turbo cho Valorant/CS2.";
 
         public int SelectedCount => _items.Count(x => x.IsSelected);
         public int TotalCount => _items.Count;
@@ -517,14 +554,27 @@ namespace PerformanceOptimizer.ViewModels
 
             if (willEnable)
             {
-                CurrentStepText = "⚡ Đang kích hoạt chế độ FPS Boost (eSports Gaming Mode)...";
-                ProgressText = "Đang mở khóa CPU 100% Turbo Boost & tắt Core Isolation (HVCI)...";
+                CurrentStepText = _isVanguardSafeMode 
+                    ? "⚡ Đang kích hoạt FPS Boost [Vanguard 100% Safe - Giữ HVCI/VBS cho Valorant]..."
+                    : "⚡ Đang kích hoạt FPS Boost eSports (Tắt Core Isolation HVCI)...";
+                ProgressText = _isVanguardSafeMode
+                    ? "Mở khóa CPU 100% Turbo Boost, Win32Priority 38 & bảo toàn HVCI cho Valorant..."
+                    : "Mở khóa CPU 100% Turbo Boost & tắt Core Isolation (HVCI)...";
 
                 await Task.Run(() =>
                 {
-                    // 1. Tắt Core Isolation (HVCI) -> Tăng 5-15% FPS CPU trong game eSports
+                    // 1. Core Isolation (HVCI)
                     var hvciItem = _items.FirstOrDefault(x => x.Id == 27);
-                    hvciItem?.NativeApply?.Invoke();
+                    if (!_isVanguardSafeMode)
+                    {
+                        // Chỉ tắt HVCI khi người dùng tắt chế độ bảo vệ Vanguard
+                        hvciItem?.NativeApply?.Invoke();
+                    }
+                    else
+                    {
+                        // Giữ nguyên hoặc bảo đảm HVCI bật để Valorant không bị lỗi VAN9005 trên Win 11
+                        hvciItem?.NativeRevert?.Invoke();
+                    }
 
                     // 2. High Performance Power Plan (100% Turbo Boost, không bị khóa 99%)
                     var powerItem = _items.FirstOrDefault(x => x.Id == 1);
@@ -538,12 +588,12 @@ namespace PerformanceOptimizer.ViewModels
                     var throttleItem = _items.FirstOrDefault(x => x.Id == 24);
                     throttleItem?.NativeApply?.Invoke();
 
-                    // 5. Xả sạch Standby RAM dọn đường cho Game
+                    // 5. Xả sạch Standby RAM an toàn cho Vanguard (Không xả working sets)
                     MemoryCleanerService.CleanStandbyMemory();
                 });
 
                 // Cập nhật trạng thái hiển thị trên các thẻ card liên quan
-                var boostIds = new[] { 1, 2, 24, 27 };
+                var boostIds = _isVanguardSafeMode ? new[] { 1, 2, 24 } : new[] { 1, 2, 24, 27 };
                 foreach (var id in boostIds)
                 {
                     var it = _items.FirstOrDefault(x => x.Id == id);
@@ -556,10 +606,26 @@ namespace PerformanceOptimizer.ViewModels
                     }
                 }
 
+                if (_isVanguardSafeMode)
+                {
+                    var hvci = _items.FirstOrDefault(x => x.Id == 27);
+                    if (hvci != null)
+                    {
+                        hvci.Status = OptimizationStatus.Reverted;
+                        hvci.IsApplied = false;
+                        hvci.StatusText = "Bảo vệ Vanguard (Bật)";
+                        hvci.StatusBrush = "#38BDF8";
+                    }
+                }
+
                 IsFpsBoostActive = true;
                 ProgressValue = 100;
-                CurrentStepText = "🔥 ĐÃ BẬT FPS BOOST eSPORTS: Tắt Core Isolation (HVCI), bung 100% Turbo Boost, dọn sạch Standby RAM!";
-                ProgressText = "Chế độ Gaming đỉnh cao đã sẵn sàng • FPS tối đa • Độ trễ chuột cực thấp";
+                CurrentStepText = _isVanguardSafeMode
+                    ? "🔥 ĐÃ BẬT FPS BOOST [Vanguard 100% Safe]: 100% Turbo Boost, Win32Priority 38, dọn RAM. Giữ HVCI để Valorant chạy mượt mà không lỗi VAN9005!"
+                    : "🔥 ĐÃ BẬT FPS BOOST eSPORTS: Tắt Core Isolation (HVCI - Cần Restart máy), bung 100% Turbo Boost, dọn sạch Standby RAM!";
+                ProgressText = _isVanguardSafeMode
+                    ? "Chế độ Gaming đỉnh cao đã sẵn sàng • FPS tối đa • 100% Tương thích Valorant & Riot Vanguard"
+                    : "Chế độ Gaming eSports tối đa • Cần khởi động lại máy để Core Isolation tắt hoàn toàn";
             }
             else
             {

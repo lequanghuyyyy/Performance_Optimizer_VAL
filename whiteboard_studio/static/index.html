@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whiteboard Studio</title>
+  <style>
+    :root {
+      --bg-base: #0c0d0e;
+      --bg-surface: #141618;
+      --bg-card: #1b1d20;
+      --bg-card-hover: #222529;
+      --border-subtle: #26292d;
+      --border-strong: #363a40;
+      --text-main: #f0f2f5;
+      --text-muted: #848c96;
+      --text-dim: #545b64;
+      --accent-solid: #ffffff;
+      --accent-text: #000000;
+      --accent-green: #22c55e;
+      --accent-active: #2c3036;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top Navigation Bar */
+    header {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--text-main);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green);
+    }
+
+    /* Main Workspace */
+    .workspace {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 52px);
+      overflow: hidden;
+    }
+
+    /* Left Control Sidebar */
+    .control-panel {
+      width: 440px;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      height: 100%;
+    }
+
+    .panel-scrollable {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Section Styles */
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .section-number {
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      color: var(--text-dim);
+    }
+
+    /* Toggle Buttons / Tabs */
+    .btn-group {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+      gap: 6px;
+      background: var(--bg-card);
+      padding: 4px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .btn-toggle {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .btn-toggle:hover {
+      color: var(--text-main);
+      background: var(--bg-card-hover);
+    }
+
+    .btn-toggle.active {
+      background: var(--accent-active);
+      border-color: var(--border-strong);
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    /* Drag & Drop Upload Zone */
+    .dropzone {
+      border: 1px dashed var(--border-strong);
+      background: var(--bg-card);
+      border-radius: var(--radius-md);
+      padding: 24px 16px;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 120px;
+    }
+
+    .dropzone:hover,
+    .dropzone.dragover {
+      border-color: var(--text-main);
+      background: var(--bg-card-hover);
+    }
+
+    .dropzone-text {
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .dropzone-hint {
+      color: var(--text-dim);
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    .dropzone input[type="file"] {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .upload-preview {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      padding: 8px;
+      border-radius: var(--radius-sm);
+      margin-top: 10px;
+    }
+
+    .upload-preview img {
+      width: 48px;
+      height: 48px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .upload-info {
+      flex: 1;
+      overflow: hidden;
+      text-align: left;
+    }
+
+    .upload-filename {
+      font-weight: 500;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .upload-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: ui-monospace, monospace;
+    }
+
+    /* Text Input Area */
+    .text-input-box {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      color: var(--text-main);
+      font-size: 13px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 90px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .text-input-box:focus {
+      border-color: var(--border-strong);
+    }
+
+    /* Style Selector Grid */
+    .style-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .style-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      padding: 10px 12px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .style-card:hover {
+      border-color: var(--border-strong);
+      background: var(--bg-card-hover);
+    }
+
+    .style-card.active {
+      border-color: var(--text-main);
+      background: var(--accent-active);
+    }
+
+    .style-title {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--text-main);
+      margin-bottom: 2px;
+    }
+
+    .style-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Sliders & Numbers */
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .control-label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .control-val {
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--text-main);
+      background: var(--bg-card);
+      height: 4px;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Action Footer */
+    .panel-footer {
+      padding: 16px 20px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+    }
+
+    .btn-render {
+      width: 100%;
+      background: var(--accent-solid);
+      color: var(--accent-text);
+      border: none;
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity 0.15s;
+    }
+
+    .btn-render:hover {
+      opacity: 0.9;
+    }
+
+    .btn-render:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Right Monitor Display */
+    .monitor-panel {
+      flex: 1;
+      background: #08090a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .monitor-frame {
+      background: #111214;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      max-height: 85vh;
+      max-width: 85vw;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Aspect ratios for monitor */
+    .aspect-tiktok {
+      aspect-ratio: 9 / 16;
+      height: 75vh;
+    }
+
+    .aspect-youtube {
+      aspect-ratio: 16 / 9;
+      width: 65vw;
+    }
+
+    .aspect-square {
+      aspect-ratio: 1 / 1;
+      height: 65vh;
+    }
+
+    .monitor-content {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #ffffff;
+    }
+
+    .monitor-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-dim);
+      font-size: 12px;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .monitor-placeholder svg {
+      opacity: 0.4;
+    }
+
+    /* Progress Overlay */
+    .render-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(12, 13, 14, 0.88);
+      backdrop-filter: blur(4px);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 10;
+    }
+
+    .render-overlay.active {
+      display: flex;
+    }
+
+    .progress-bar-container {
+      width: 240px;
+      height: 4px;
+      background: var(--border-subtle);
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--text-main);
+      transition: width 0.3s ease;
+    }
+
+    .render-status-text {
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+    }
+
+    /* Download Float Action */
+    .monitor-actions {
+      position: absolute;
+      bottom: 20px;
+      display: none;
+      gap: 10px;
+      z-index: 5;
+    }
+
+    .monitor-actions.active {
+      display: flex;
+    }
+
+    .btn-action-pill {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      color: var(--text-main);
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 999px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      transition: all 0.15s;
+    }
+
+    .btn-action-pill:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--text-main);
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-title">Whiteboard Studio</div>
+      <div class="status-badge">
+        <span class="status-dot"></span>
+        <span>PRO ENGINE</span>
+      </div>
+    </div>
+    <div style="font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-dim);">
+      NATIVE FASTAPI &bull; OPENCV
+    </div>
+  </header>
+
+  <!-- Workspace Split View -->
+  <div class="workspace">
+
+    <!-- Left Controls Panel -->
+    <div class="control-panel">
+      <div class="panel-scrollable">
+
+        <!-- 01: Source Content -->
+        <div>
+          <div class="section-title">
+            <span class="section-number">01</span>
+            <span>Nội dung đầu vào</span>
+          </div>
+
+          <div class="btn-group" style="margin-bottom: 12px;">
+            <button class="btn-toggle active" id="tabImageBtn" onclick="switchSourceTab('image')">Hình ảnh</button>
+            <button class="btn-toggle" id="tabTextBtn" onclick="switchSourceTab('text')">Chuỗi chữ (Text)</button>
+          </div>
+
+          <!-- Upload Image View -->
+          <div id="imageSourceView">
+            <div class="dropzone" id="dropArea">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round" style="color: var(--text-muted);">
+                <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                <circle cx="9" cy="9" r="2" />
+                <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+              </svg>
+              <div class="dropzone-text">Kéo thả ảnh vào đây hoặc click để chọn</div>
+              <div class="dropzone-hint">Hỗ trợ PNG, JPG, WEBP &bull; Tự động chuyển phác thảo</div>
+              <input type="file" id="imageInput" accept="image/*" onchange="handleImageSelected(this.files[0])">
+            </div>
+
+            <div id="selectedImagePreview" class="upload-preview" style="display: none;">
+              <img id="thumbImg" src="" alt="Thumbnail">
+              <div class="upload-info">
+                <div class="upload-filename" id="thumbName">image.png</div>
+                <div class="upload-meta" id="thumbMeta">1080 x 1920</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Enter Text View -->
+          <div id="textSourceView" style="display: none;">
+            <textarea id="textInput" class="text-input-box" placeholder="Nhập chữ cần vẽ lên bảng trắng..."
+              oninput="handleTextChange(this.value)">AI WHITEBOARD</textarea>
+          </div>
+        </div>
+
+        <!-- 02: Platform & Dimensions -->
+        <div>
+          <div class="section-title">
+            <span class="section-number">02</span>
+            <span>Định dạng & Kích thước</span>
+          </div>
+          <div class="btn-group">
+            <button class="btn-toggle active" onclick="setPreset('tiktok', this)">
+              TikTok / Reels<br><span style="font-size:10px; color:var(--text-dim);">9:16 (1080x1920)</span>
+            </button>
+            <button class="btn-toggle" onclick="setPreset('youtube', this)">
+              YouTube<br><span style="font-size:10px; color:var(--text-dim);">16:9 (1920x1080)</span>
+            </button>
+            <button class="btn-toggle" onclick="setPreset('square', this)">
+              Instagram<br><span style="font-size:10px; color:var(--text-dim);">1:1 (1080x1080)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 03: Sketch Style -->
+        <div>
+          <div class="section-title">
+            <span class="section-number">03</span>
+            <span>Phong cách nét vẽ</span>
+          </div>
+          <div class="style-grid">
+            <div class="style-card active" onclick="setStyle('color', this)">
+              <div class="style-title">Phác thảo màu</div>
+              <div class="style-desc">Giữ nguyên màu sắc rực rỡ dạng tranh vẽ màu nước</div>
+            </div>
+            <div class="style-card" onclick="setStyle('pencil', this)">
+              <div class="style-title">Chì đen trắng</div>
+              <div class="style-desc">Tranh chì than cổ điển tương phản cao</div>
+            </div>
+            <div class="style-card" onclick="setStyle('lineart', this)">
+              <div class="style-title">Nét viền Line-Art</div>
+              <div class="style-desc">Đường nét viền truyện tranh</div>
+            </div>
+            <div class="style-card" onclick="setStyle('none', this)">
+              <div class="style-title">Nguyên bản</div>
+              <div class="style-desc">Giữ 100% chi tiết ảnh gốc không lọc</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 04: Hand & Dynamics -->
+        <div>
+          <div class="section-title">
+            <span class="section-number">04</span>
+            <span>Thời lượng & Bàn tay</span>
+          </div>
+
+          <div
+            style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom: 12px;">
+            <div class="control-row">
+              <span class="control-label">Thời lượng vẽ:</span>
+              <span class="control-val" id="durationDisplay">30.0s</span>
+            </div>
+            <input type="range" id="durationSlider" min="3" max="60" step="1" value="30"
+              oninput="document.getElementById('durationDisplay').innerText = this.value + '.0s'; document.querySelectorAll('#durationPresets button').forEach(b => b.classList.toggle('active', b.innerText === this.value + 's'))">
+            
+            <div id="durationPresets" style="display: flex; gap: 6px; margin-top: 10px;">
+              <button type="button" class="btn-toggle" style="padding: 4px 6px; font-size: 11px; flex: 1;" onclick="setDurationPreset(10)">10s</button>
+              <button type="button" class="btn-toggle" style="padding: 4px 6px; font-size: 11px; flex: 1;" onclick="setDurationPreset(15)">15s</button>
+              <button type="button" class="btn-toggle active" style="padding: 4px 6px; font-size: 11px; flex: 1;" onclick="setDurationPreset(30)">30s</button>
+              <button type="button" class="btn-toggle" style="padding: 4px 6px; font-size: 11px; flex: 1;" onclick="setDurationPreset(45)">45s</button>
+              <button type="button" class="btn-toggle" style="padding: 4px 6px; font-size: 11px; flex: 1;" onclick="setDurationPreset(60)">60s</button>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div style="flex: 1; font-size: 12px; color: var(--text-muted);">Bàn tay vẽ:</div>
+            <label class="btn-toggle"
+              style="background: var(--bg-card); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 11px;">
+              <span>+ Đổi ảnh bàn tay</span>
+              <input type="file" id="handInput" accept="image/png" style="display: none;"
+                onchange="handleHandSelected(this.files[0])">
+            </label>
+          </div>
+          <div id="handInfo"
+            style="font-size: 11px; color: var(--text-dim); margin-top: 4px; font-family: ui-monospace, monospace;">
+            Mặc định: Bút dạ nghệ thuật HD
+          </div>
+        </div>
+
+        <!-- 05: VoiceStudio Audio & Narration -->
+        <div>
+          <div class="section-title">
+            <span class="section-number">05</span>
+            <span>Thuyết minh giọng nói (VoiceStudio)</span>
+          </div>
+
+          <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 600;">
+                <input type="checkbox" id="voiceToggle" onchange="toggleVoiceSection(this.checked)" style="accent-color: var(--text-main);">
+                <span>Bật giọng thuyết minh</span>
+              </label>
+              <div id="vsStatusBadge" style="font-size: 11px; font-family: ui-monospace, monospace; color: var(--text-dim); display: flex; align-items: center; gap: 5px;">
+                <span id="vsStatusDot" style="width: 6px; height: 6px; border-radius: 50%; background: #64748b;"></span>
+                <span id="vsStatusText">Kiểm tra port 3900...</span>
+              </div>
+            </div>
+
+            <div id="voiceInputArea" style="display: none; flex-direction: column; gap: 8px;">
+              <textarea id="voiceScript" class="text-input-box" style="min-height: 65px; font-size: 12px;" placeholder="Nhập kịch bản / lời thoại AI đọc..."></textarea>
+              
+              <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+                <label class="btn-toggle" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 11px; flex: 1;">
+                  <span>+ Hoặc tải lên file Audio (MP3/WAV)</span>
+                  <input type="file" id="voiceAudioInput" accept="audio/*" style="display: none;" onchange="handleVoiceAudioSelected(this.files[0])">
+                </label>
+              </div>
+              <div id="voiceAudioName" style="font-size: 11px; color: var(--text-muted); font-family: ui-monospace, monospace;"></div>
+              <div style="font-size: 11px; color: var(--text-dim);">
+                &bull; Video vẽ tay sẽ tự động đồng bộ thời lượng khớp 100% với độ dài giọng đọc!
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Sticky Footer Action -->
+      <div class="panel-footer">
+        <button class="btn-render" id="renderBtn" onclick="startRender()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          <span>Render Video Hoàn Chỉnh</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Right Monitor Canvas -->
+    <div class="monitor-panel">
+      <div class="monitor-frame aspect-tiktok" id="monitorFrame">
+
+        <!-- Initial Placeholder -->
+        <div class="monitor-placeholder" id="placeholderView">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M8 12h8" />
+            <path d="M12 8v8" />
+          </svg>
+          <div>Chọn ảnh hoặc nhập chữ để xem trước khung hình vẽ</div>
+        </div>
+
+        <!-- Live Image Preview Canvas -->
+        <img id="monitorImg" class="monitor-content" style="display: none;" alt="Canvas Preview">
+
+        <!-- Result Video Player -->
+        <video id="monitorVideo" class="monitor-content" style="display: none;" controls loop autoplay
+          playsinline></video>
+
+        <!-- Progress Overlay during Render -->
+        <div class="render-overlay" id="renderOverlay">
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="progressBar"></div>
+          </div>
+          <div class="render-status-text" id="statusText">ĐANG XỬ LÝ NÉT VẼ...</div>
+        </div>
+      </div>
+
+      <!-- Action buttons for completed video -->
+      <div class="monitor-actions" id="monitorActions">
+        <a id="downloadBtn" class="btn-action-pill" href="#" download="whiteboard_video.mp4">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <span>Tải Video MP4</span>
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let currentSource = 'image'; // 'image' or 'text'
+    let currentPreset = 'tiktok';
+    let currentStyle = 'color';
+    let selectedImageFile = null;
+    let selectedHandFile = null;
+
+    function switchSourceTab(tab) {
+      currentSource = tab;
+      document.getElementById('tabImageBtn').classList.toggle('active', tab === 'image');
+      document.getElementById('tabTextBtn').classList.toggle('active', tab === 'text');
+      document.getElementById('imageSourceView').style.display = tab === 'image' ? 'block' : 'none';
+      document.getElementById('textSourceView').style.display = tab === 'text' ? 'block' : 'none';
+      requestPreview();
+    }
+
+    function setPreset(preset, el) {
+      currentPreset = preset;
+      document.querySelectorAll('#tabPresetBtn, .btn-group button').forEach(b => {
+        if (b.innerText.toLowerCase().includes(preset)) b.classList.add('active');
+        else if (b.closest('.btn-group') === el.closest('.btn-group')) b.classList.remove('active');
+      });
+      el.classList.add('active');
+
+      const frame = document.getElementById('monitorFrame');
+      frame.className = 'monitor-frame';
+      if (preset === 'tiktok' || preset === 'reels' || preset === 'shorts') frame.classList.add('aspect-tiktok');
+      else if (preset === 'youtube' || preset === '16:9') frame.classList.add('aspect-youtube');
+      else if (preset === 'square' || preset === 'instagram') frame.classList.add('aspect-square');
+
+      requestPreview();
+    }
+
+    function setStyle(style, el) {
+      currentStyle = style;
+      document.querySelectorAll('.style-card').forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+      requestPreview();
+    }
+
+    function handleImageSelected(file) {
+      if (!file) return;
+      selectedImageFile = file;
+      const localUrl = URL.createObjectURL(file);
+      document.getElementById('thumbImg').src = localUrl;
+      document.getElementById('thumbName').innerText = file.name;
+      document.getElementById('thumbMeta').innerText = (file.size / 1024).toFixed(1) + ' KB';
+      document.getElementById('selectedImagePreview').style.display = 'flex';
+      
+      // Hiển thị ảnh ngay lập tức lên khung Monitor xem trước
+      showMonitorImage(localUrl);
+      requestPreview();
+    }
+
+    function setDurationPreset(val) {
+      document.getElementById('durationSlider').value = val;
+      document.getElementById('durationDisplay').innerText = val + '.0s';
+      document.querySelectorAll('#durationPresets button').forEach(b => {
+        b.classList.toggle('active', b.innerText === val + 's');
+      });
+    }
+
+    function handleHandSelected(file) {
+      if (!file) return;
+      selectedHandFile = file;
+      document.getElementById('handInfo').innerText = 'Đã chọn: ' + file.name;
+    }
+
+    function handleTextChange(val) {
+      requestPreview();
+    }
+
+    // Gửi request lấy ảnh preview nhanh (Live Sketch Canvas)
+    let previewDebounce = null;
+    function requestPreview() {
+      clearTimeout(previewDebounce);
+      previewDebounce = setTimeout(async () => {
+        const formData = new FormData();
+        formData.append('source_type', currentSource);
+        formData.append('preset', currentPreset);
+        formData.append('style', currentStyle);
+
+        if (currentSource === 'image') {
+          if (!selectedImageFile) return;
+          formData.append('file', selectedImageFile);
+        } else {
+          const text = document.getElementById('textInput').value.trim();
+          if (!text) return;
+          formData.append('text', text);
+        }
+
+        try {
+          const res = await fetch('/api/preview', { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = await res.json();
+            showMonitorImage(data.preview_url);
+          }
+        } catch (e) {
+          console.error('Preview error:', e);
+        }
+      }, 250);
+    }
+
+    function showMonitorImage(url) {
+      document.getElementById('placeholderView').style.display = 'none';
+      document.getElementById('monitorVideo').style.display = 'none';
+      document.getElementById('monitorActions').classList.remove('active');
+      const img = document.getElementById('monitorImg');
+      img.src = url;
+      img.style.display = 'block';
+    }
+
+    let selectedVoiceAudioFile = null;
+
+    function toggleVoiceSection(enabled) {
+      document.getElementById('voiceInputArea').style.display = enabled ? 'flex' : 'none';
+      if (enabled) {
+        checkVoiceStudioStatus();
+      }
+    }
+
+    function handleVoiceAudioSelected(file) {
+      if (!file) return;
+      selectedVoiceAudioFile = file;
+      document.getElementById('voiceAudioName').innerText = 'Đã chọn audio: ' + file.name;
+    }
+
+    async function checkVoiceStudioStatus() {
+      try {
+        const res = await fetch('/api/voicestudio/status');
+        if (res.ok) {
+          const data = await res.json();
+          const dot = document.getElementById('vsStatusDot');
+          const txt = document.getElementById('vsStatusText');
+          if (data.connected) {
+            dot.style.background = 'var(--accent-green)';
+            txt.innerText = 'VoiceStudio Sẵn Sàng (3900)';
+            txt.style.color = 'var(--accent-green)';
+          } else {
+            dot.style.background = '#eab308';
+            txt.innerText = 'VoiceStudio Offline (Port 3900)';
+            txt.style.color = '#eab308';
+          }
+        }
+      } catch (e) {
+        console.log('Error checking VoiceStudio:', e);
+      }
+    }
+
+    async function startRender() {
+      const renderBtn = document.getElementById('renderBtn');
+      const overlay = document.getElementById('renderOverlay');
+      const progressBar = document.getElementById('progressBar');
+      const statusText = document.getElementById('statusText');
+
+      if (currentSource === 'image' && !selectedImageFile) {
+        alert('Vui lòng chọn 1 ảnh để vẽ!');
+        return;
+      }
+
+      renderBtn.disabled = true;
+      overlay.classList.add('active');
+      progressBar.style.width = '20%';
+      statusText.innerText = 'ĐANG TÁCH NÉT VÀ QUỸ ĐẠO BÚT...';
+
+      const formData = new FormData();
+      formData.append('source_type', currentSource);
+      formData.append('preset', currentPreset);
+      formData.append('style', currentStyle);
+      formData.append('duration', document.getElementById('durationSlider').value);
+
+      if (currentSource === 'image') {
+        formData.append('file', selectedImageFile);
+      } else {
+        formData.append('text', document.getElementById('textInput').value);
+      }
+
+      if (selectedHandFile) {
+        formData.append('hand_file', selectedHandFile);
+      }
+
+      // Giọng nói VoiceStudio
+      const voiceEnabled = document.getElementById('voiceToggle').checked;
+      formData.append('voice_enabled', voiceEnabled);
+      if (voiceEnabled) {
+        const script = document.getElementById('voiceScript').value.trim();
+        formData.append('voice_script', script);
+        if (selectedVoiceAudioFile) {
+          formData.append('voice_audio_file', selectedVoiceAudioFile);
+        }
+      }
+
+      // Mô phỏng tiến trình mượt mà
+      let progress = 20;
+      const progressTimer = setInterval(() => {
+        if (progress < 90) {
+          progress += Math.random() * 8;
+          progressBar.style.width = Math.min(progress, 90) + '%';
+          if (progress > 50) statusText.innerText = 'ĐANG SYNTHESIZE FRAME & MÃ HÓA H.264...';
+        }
+      }, 400);
+
+      try {
+        const response = await fetch('/api/render', { method: 'POST', body: formData });
+        clearInterval(progressTimer);
+
+        if (!response.ok) {
+          throw new Error('Lỗi render video');
+        }
+
+        const data = await response.json();
+        progressBar.style.width = '100%';
+        statusText.innerText = 'HOÀN THÀNH!';
+
+        setTimeout(() => {
+          overlay.classList.remove('active');
+          renderBtn.disabled = false;
+          displayVideo(data.video_url);
+        }, 400);
+
+      } catch (err) {
+        clearInterval(progressTimer);
+        overlay.classList.remove('active');
+        renderBtn.disabled = false;
+        alert('Đã xảy ra lỗi khi tạo video: ' + err.message);
+      }
+    }
+
+    function displayVideo(url) {
+      document.getElementById('monitorImg').style.display = 'none';
+      document.getElementById('placeholderView').style.display = 'none';
+
+      const video = document.getElementById('monitorVideo');
+      // Thêm timestamp để trình duyệt load file mới nhất, tránh cache cũ
+      video.src = url + '?t=' + Date.now();
+      video.style.display = 'block';
+      video.load();
+      
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.log('Tự động phát bị chặn (chờ tương tác):', err);
+        });
+      }
+
+      const downloadBtn = document.getElementById('downloadBtn');
+      downloadBtn.href = url;
+      document.getElementById('monitorActions').classList.add('active');
+    }
+
+    // Tự động load preview mặc định khi vừa mở app
+    window.addEventListener('DOMContentLoaded', () => {
+      checkVoiceStudioStatus();
+      // Kéo thả file tiện lợi
+      const dropArea = document.getElementById('dropArea');
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropArea.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          dropArea.classList.add('dragover');
+        }, false);
+      });
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          dropArea.classList.remove('dragover');
+        }, false);
+      });
+      dropArea.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length) {
+          handleImageSelected(files[0]);
+        }
+      });
+    });
+  </script>
+</body>
+
+</html>

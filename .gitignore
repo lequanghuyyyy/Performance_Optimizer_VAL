@@ -1,0 +1,27 @@
+# Visual Studio & .NET build artifacts
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+*.exe
+*.dll
+*.pdb
+*.user
+*.suo
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Media and large outputs
+whiteboard_studio/static/outputs/
+whiteboard_studio/static/previews/
+whiteboard_studio/static/uploads/
+*.mp4
+*.wav
+*.mp3
+
+# Submodules / large repos
+VoiceStudio_repo/

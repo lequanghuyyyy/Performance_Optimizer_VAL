@@ -121,6 +121,11 @@ namespace PerformanceOptimizer
             await ViewModel.ToggleFpsBoostAsync();
         }
 
+        private void BtnToggleVanguardSafe_Click(object sender, RoutedEventArgs e)
+        {
+            ViewModel.ToggleVanguardSafeMode();
+        }
+
         private void Card_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             if (sender is FrameworkElement fe && fe.DataContext is PerformanceOptimizer.Models.OptimizationItem item)

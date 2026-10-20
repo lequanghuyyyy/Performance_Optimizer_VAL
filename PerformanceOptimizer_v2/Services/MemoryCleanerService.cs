@@ -47,6 +47,10 @@ namespace PerformanceOptimizer.Services
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
         public class MemoryPurgeResult
         {
             public ulong AvailableBeforeMb { get; set; }
@@ -72,10 +76,12 @@ namespace PerformanceOptimizer.Services
 
         public static bool CleanStandbyMemory()
         {
+            IntPtr token = IntPtr.Zero;
             try
             {
                 // 1. Cấp quyền SeProfileSingleProcessPrivilege
-                if (OpenProcessToken(Process.GetCurrentProcess().Handle, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out IntPtr token))
+                using var currentProcess = Process.GetCurrentProcess();
+                if (OpenProcessToken(currentProcess.Handle, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out token))
                 {
                     var tp = new TOKEN_PRIVILEGES
                     {
@@ -89,6 +95,8 @@ namespace PerformanceOptimizer.Services
                 }
 
                 // 2. Gọi NtSetSystemInformation với mã lệnh 80 (SystemMemoryListInformation) và 4 (MemoryPurgeStandbyList)
+                // CHÚ Ý: Không dùng mã 3 (MemoryEmptyWorkingSets) vì sẽ ép rớt bộ nhớ của Riot Vanguard (vgc.exe),
+                // gây lỗi mất kết nối chống gian lận VAN 1067 / VAN 84.
                 int command = 4;
                 int result = NtSetSystemInformation(80, ref command, sizeof(int));
                 return result == 0;
@@ -96,6 +104,14 @@ namespace PerformanceOptimizer.Services
             catch
             {
                 return false;
+            }
+            finally
+            {
+                // Đóng handle token để tránh rò rỉ tài nguyên hệ điều hành
+                if (token != IntPtr.Zero)
+                {
+                    CloseHandle(token);
+                }
             }
         }
 
@@ -106,23 +122,15 @@ namespace PerformanceOptimizer.Services
             {
                 res.AvailableBeforeMb = GetAvailableMemoryMb();
 
-                // 1. Purge Standby List
+                // 1. Purge Standby List (An toàn tuyệt đối cho Valorant & Vanguard)
                 bool ok = CleanStandbyMemory();
 
-                // 2. Empty inactive working sets
-                try
-                {
-                    int cmdWorkingSets = 3; // MemoryEmptyWorkingSets
-                    NtSetSystemInformation(80, ref cmdWorkingSets, sizeof(int));
-                }
-                catch { }
-
-                // 3. Local GC cleanup
+                // 2. Thu gom rác nội bộ ứng dụng
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
 
-                // Allow kernel counter sync
-                Thread.Sleep(120);
+                // Đợi kernel đồng bộ counter bộ nhớ
+                Thread.Sleep(100);
 
                 res.AvailableAfterMb = GetAvailableMemoryMb();
                 res.FreedMb = (long)res.AvailableAfterMb - (long)res.AvailableBeforeMb;
@@ -134,5 +142,42 @@ namespace PerformanceOptimizer.Services
             }
             return res;
         }
+
+        #region Background Auto-Purge Daemon
+        private static System.Threading.Timer? _autoPurgeTimer;
+        public static bool IsAutoPurgeRunning => _autoPurgeTimer != null;
+
+        public static void StartAutoPurgeDaemon(int intervalMinutes = 5)
+        {
+            if (_autoPurgeTimer != null) return;
+
+            // Xả ngay 1 lần ban đầu
+            CleanStandbyMemory();
+
+            int dueMs = intervalMinutes * 60 * 1000;
+            _autoPurgeTimer = new System.Threading.Timer(_ =>
+            {
+                try
+                {
+                    // Tự động kiểm tra thông minh: Chỉ xả Standby List khi RAM khả dụng < 2500 MB để tránh tăng Disk I/O không cần thiết
+                    ulong availMb = GetAvailableMemoryMb();
+                    if (availMb < 2500)
+                    {
+                        CleanStandbyMemory();
+                    }
+                }
+                catch { }
+            }, null, dueMs, dueMs);
+        }
+
+        public static void StopAutoPurgeDaemon()
+        {
+            if (_autoPurgeTimer != null)
+            {
+                _autoPurgeTimer.Dispose();
+                _autoPurgeTimer = null;
+            }
+        }
+        #endregion
     }
 }

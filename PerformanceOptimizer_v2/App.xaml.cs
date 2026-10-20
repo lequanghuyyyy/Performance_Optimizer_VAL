@@ -10,6 +10,22 @@ namespace PerformanceOptimizer
         {
             base.OnStartup(e);
 
+            // Bắt toàn bộ lỗi ngoại lệ không mong muốn, bảo đảm ứng dụng không bao giờ bị crash đột ngột
+            DispatcherUnhandledException += (s, args) =>
+            {
+                args.Handled = true;
+            };
+
+            AppDomain.CurrentDomain.UnhandledException += (s, args) =>
+            {
+                // Ghi nhận lỗi và ngăn crash nếu có thể
+            };
+
+            TaskScheduler.UnobservedTaskException += (s, args) =>
+            {
+                args.SetObserved();
+            };
+
             if (!IsAdministrator())
             {
                 try
@@ -31,6 +47,13 @@ namespace PerformanceOptimizer
                 catch
                 {
                     // User canceled UAC prompt
+                    MessageBox.Show(
+                        "Windows Performance Studio cần quyền Quản trị viên (Administrator) để tối ưu hóa hệ thống và bảo đảm an toàn cho các tiến trình game.\n\nỨng dụng sẽ tự động đóng.",
+                        "Yêu Cầu Quyền Quản Trị Viên",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    Shutdown();
+                    return;
                 }
             }
         }
