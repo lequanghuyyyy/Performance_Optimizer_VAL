@@ -159,7 +159,15 @@ namespace PerformanceOptimizer.Services
             {
                 try
                 {
-                    // Tự động kiểm tra thông minh: Chỉ xả Standby List khi RAM khả dụng < 2500 MB để tránh tăng Disk I/O không cần thiết
+                    // Bảo vệ Game khỏi khựng giật (Anti-Stutter): Tuyệt đối KHÔNG xả Standby Memory khi đang trong trận game!
+                    // Standby List lưu cache textures, âm thanh và map của game. Xóa lúc này sẽ gây Hard Fault và đứng hình.
+                    bool isGaming = Process.GetProcessesByName("VALORANT-Win64-Shipping").Length > 0 ||
+                                   Process.GetProcessesByName("cs2").Length > 0 ||
+                                   Process.GetProcessesByName("League of Legends").Length > 0 ||
+                                   Process.GetProcessesByName("r5apex").Length > 0;
+                    if (isGaming) return;
+
+                    // Chỉ xả Standby List khi RAM khả dụng < 2500 MB và không trong game
                     ulong availMb = GetAvailableMemoryMb();
                     if (availMb < 2500)
                     {

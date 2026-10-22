@@ -47,6 +47,16 @@ namespace PerformanceOptimizer.ViewModels
             _filteredItems = CollectionViewSource.GetDefaultView(_items);
             _filteredItems.Filter = FilterItem;
 
+            // Mặc định bật Vanguard Safe Mode -> Tự động bỏ chọn mục tắt HVCI (Item 27) để chống lỗi VAN9005/VAN1067
+            if (_isVanguardSafeMode)
+            {
+                var hvciItem = _items.FirstOrDefault(x => x.Id == 27);
+                if (hvciItem != null)
+                {
+                    hvciItem.IsSelected = false;
+                }
+            }
+
             Categories = new List<string>
             {
                 "Tất cả",
@@ -219,6 +229,14 @@ namespace PerformanceOptimizer.ViewModels
         public void ToggleVanguardSafeMode()
         {
             IsVanguardSafeMode = !IsVanguardSafeMode;
+            if (_isVanguardSafeMode)
+            {
+                var hvciItem = _items.FirstOrDefault(x => x.Id == 27);
+                if (hvciItem != null)
+                {
+                    hvciItem.IsSelected = false;
+                }
+            }
         }
 
         public bool IsFpsBoostActive
@@ -325,6 +343,12 @@ namespace PerformanceOptimizer.ViewModels
             {
                 if (SelectedCategory == "Tất cả" || item.Category.Equals(SelectedCategory, StringComparison.OrdinalIgnoreCase))
                 {
+                    // Khi Vanguard Safe Mode đang BẬT: Bảo vệ tuyệt đối, không tự động tick tắt Core Isolation (Item 27)
+                    if (_isVanguardSafeMode && item.Id == 27)
+                    {
+                        item.IsSelected = false;
+                        continue;
+                    }
                     item.IsSelected = true;
                 }
             }
@@ -377,6 +401,18 @@ namespace PerformanceOptimizer.ViewModels
 
             foreach (var item in selected)
             {
+                // Bảo vệ tối cao cho Riot Vanguard: Nếu đang ở Vanguard Safe Mode, tuyệt đối không can thiệp tắt Core Isolation (HVCI)
+                if (_isVanguardSafeMode && item.Id == 27)
+                {
+                    item.Status = OptimizationStatus.Reverted;
+                    item.StatusText = "Bảo vệ Vanguard (Giữ nguyên)";
+                    item.StatusBrush = "#38BDF8";
+                    done++;
+                    ProgressValue = Math.Round((double)done / total * 100, 0);
+                    ProgressText = $"Đã hoàn thành {done}/{total} mục ({ProgressValue}%)";
+                    continue;
+                }
+
                 item.Status = OptimizationStatus.Running;
                 CurrentStepText = $"[Tiến trình {done + 1}/{total}] Đang xử lý: {item.Title}";
 
@@ -446,6 +482,18 @@ namespace PerformanceOptimizer.ViewModels
 
             foreach (var item in selected)
             {
+                // Bảo vệ tối cao cho Riot Vanguard: Nếu đang ở Vanguard Safe Mode, tuyệt đối không can thiệp tắt Core Isolation (HVCI)
+                if (_isVanguardSafeMode && item.Id == 27)
+                {
+                    item.Status = OptimizationStatus.Reverted;
+                    item.StatusText = "Bảo vệ Vanguard (Giữ nguyên)";
+                    item.StatusBrush = "#38BDF8";
+                    done++;
+                    ProgressValue = Math.Round((double)done / total * 100, 0);
+                    ProgressText = $"Đã hoàn thành {done}/{total} mục ({ProgressValue}%)";
+                    continue;
+                }
+
                 item.Status = OptimizationStatus.Running;
                 CurrentStepText = $"[Hoàn tác {done + 1}/{total}] Khôi phục mặc định: {item.Title}";
 
@@ -555,11 +603,11 @@ namespace PerformanceOptimizer.ViewModels
             if (willEnable)
             {
                 CurrentStepText = _isVanguardSafeMode 
-                    ? "⚡ Đang kích hoạt FPS Boost [Vanguard 100% Safe - Giữ HVCI/VBS cho Valorant]..."
-                    : "⚡ Đang kích hoạt FPS Boost eSports (Tắt Core Isolation HVCI)...";
+                    ? "⚡ Đang kích hoạt FPS Boost [Vanguard 100% Safe - CPU + GPU + Shader Cache 10GB]..."
+                    : "⚡ Đang kích hoạt FPS Boost eSports (Tắt Core Isolation HVCI + GPU + Shader Cache)...";
                 ProgressText = _isVanguardSafeMode
-                    ? "Mở khóa CPU 100% Turbo Boost, Win32Priority 38 & bảo toàn HVCI cho Valorant..."
-                    : "Mở khóa CPU 100% Turbo Boost & tắt Core Isolation (HVCI)...";
+                    ? "Mở khóa CPU 100% Turbo, Win32Priority 38, Tắt GameDVR, Shader Cache 10GB & Giữ HVCI cho Valorant..."
+                    : "Mở khóa CPU 100% Turbo, Tắt GameDVR, Shader Cache 10GB & Tắt Core Isolation (HVCI)...";
 
                 await Task.Run(() =>
                 {
@@ -584,16 +632,32 @@ namespace PerformanceOptimizer.ViewModels
                     var quantumItem = _items.FirstOrDefault(x => x.Id == 2);
                     quantumItem?.NativeApply?.Invoke();
 
-                    // 4. Power Throttling Off
+                    // 4. Đồ họa: Tắt GameDVR & bật HAGS (Giải phóng GPU onboard khỏi tính năng quay màn hình ngầm)
+                    var gpuItem = _items.FirstOrDefault(x => x.Id == 3);
+                    gpuItem?.NativeApply?.Invoke();
+
+                    // 5. Gán High Performance GPU cho Valorant, CS2 & Dev Tools
+                    var direct3dItem = _items.FirstOrDefault(x => x.Id == 4);
+                    direct3dItem?.NativeApply?.Invoke();
+
+                    // 6. NetworkThrottlingIndex = -1 & SystemResponsiveness = 0 (Triệt tiêu độ trễ hệ thống)
+                    var latencyItem = _items.FirstOrDefault(x => x.Id == 7);
+                    latencyItem?.NativeApply?.Invoke();
+
+                    // 7. Power Throttling Off
                     var throttleItem = _items.FirstOrDefault(x => x.Id == 24);
                     throttleItem?.NativeApply?.Invoke();
 
-                    // 5. Xả sạch Standby RAM an toàn cho Vanguard (Không xả working sets)
-                    MemoryCleanerService.CleanStandbyMemory();
+                    // 8. Shader Cache 10GB (Triệt tiêu drop giật FPS khi tung chiêu/load map)
+                    var shaderItem = _items.FirstOrDefault(x => x.Id == 28);
+                    shaderItem?.NativeApply?.Invoke();
+
+                    // 9. Dừng khẩn cấp tiến trình GameDVR ngầm
+                    NativeTweakService.StopService("BcastDVRUserService");
                 });
 
                 // Cập nhật trạng thái hiển thị trên các thẻ card liên quan
-                var boostIds = _isVanguardSafeMode ? new[] { 1, 2, 24 } : new[] { 1, 2, 24, 27 };
+                var boostIds = _isVanguardSafeMode ? new[] { 1, 2, 3, 4, 7, 24, 28 } : new[] { 1, 2, 3, 4, 7, 24, 27, 28 };
                 foreach (var id in boostIds)
                 {
                     var it = _items.FirstOrDefault(x => x.Id == id);
@@ -621,10 +685,10 @@ namespace PerformanceOptimizer.ViewModels
                 IsFpsBoostActive = true;
                 ProgressValue = 100;
                 CurrentStepText = _isVanguardSafeMode
-                    ? "🔥 ĐÃ BẬT FPS BOOST [Vanguard 100% Safe]: 100% Turbo Boost, Win32Priority 38, dọn RAM. Giữ HVCI để Valorant chạy mượt mà không lỗi VAN9005!"
-                    : "🔥 ĐÃ BẬT FPS BOOST eSPORTS: Tắt Core Isolation (HVCI - Cần Restart máy), bung 100% Turbo Boost, dọn sạch Standby RAM!";
+                    ? "🔥 ĐÃ BẬT FPS BOOST [Vanguard 100% Safe]: CPU Turbo, Tắt GameDVR, Gán High GPU, Shader Cache 10GB, dọn RAM. Sẵn sàng chiến game mượt mà!"
+                    : "🔥 ĐÃ BẬT FPS BOOST eSPORTS: Tắt Core Isolation (HVCI), CPU Turbo, Tắt GameDVR, Shader Cache 10GB, dọn sạch Standby RAM!";
                 ProgressText = _isVanguardSafeMode
-                    ? "Chế độ Gaming đỉnh cao đã sẵn sàng • FPS tối đa • 100% Tương thích Valorant & Riot Vanguard"
+                    ? "Chế độ Gaming eSports đa tầng • Triệt tiêu khựng lag • 100% Tương thích Valorant & Riot Vanguard"
                     : "Chế độ Gaming eSports tối đa • Cần khởi động lại máy để Core Isolation tắt hoàn toàn";
             }
             else

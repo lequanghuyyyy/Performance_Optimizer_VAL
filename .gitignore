@@ -4,6 +4,7 @@
 [Oo]bj/
 *.user
 *.suo
+*.pdb
 
 # Python cache
 __pycache__/
@@ -11,3 +12,11 @@ __pycache__/
 *$py.class
 .venv/
 env/
+
+# Whiteboard Studio temporary render artifacts
+whiteboard_studio/static/outputs/*
+whiteboard_studio/static/previews/*
+whiteboard_studio/static/uploads/*
+!whiteboard_studio/static/outputs/.gitkeep
+!whiteboard_studio/static/previews/.gitkeep
+!whiteboard_studio/static/uploads/.gitkeep

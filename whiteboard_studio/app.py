@@ -1,12 +1,13 @@
 """
 Whiteboard Studio - Web Application Server
-Chạy giao diện Studio Web chuyên nghiệp với FastAPI & Uvicorn
+Chạy giao diện Studio Web chuyên nghiệp với FastAPI & Uvicorn (Non-blocking Background Threading)
 """
 
 import os
 import sys
 import uuid
 import shutil
+import threading
 import cv2
 import numpy as np
 
@@ -39,6 +40,9 @@ UPLOAD_DIR = os.path.join(STATIC_DIR, "uploads")
 
 for d in [STATIC_DIR, PREVIEW_DIR, OUTPUT_DIR, UPLOAD_DIR]:
     os.makedirs(d, exist_ok=True)
+
+# Quản lý tác vụ render ngầm theo task_id để chống block Uvicorn Event Loop
+RENDER_TASKS = {}
 
 # Mount static folder
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -103,8 +107,69 @@ async def generate_preview(
 
 @app.get("/api/voicestudio/status")
 def voicestudio_status():
-    """Kiểm tra kết nối VoiceStudio server local"""
+    """Kiểm tra kết nối VoiceStudio server local trung thực"""
     return vs_client.check_connection()
+
+def _run_render_worker(task_id, studio, source_type, img_path, text, output_path, output_filename, style, duration, audio_path):
+    """Hàm worker chạy ngầm trong thread riêng biệt để không block Event Loop của server"""
+    try:
+        def update_progress(pct, msg):
+            RENDER_TASKS[task_id] = {
+                "status": "processing",
+                "progress": pct,
+                "message": msg,
+                "video_url": None
+            }
+
+        update_progress(5, "Đang khởi tạo engine nét vẽ...")
+
+        if source_type == "image":
+            success = studio.create_from_image(
+                img_path,
+                output_path,
+                sketch_mode=style,
+                duration_sec=duration,
+                fps=30,
+                audio_path=audio_path,
+                progress_callback=update_progress
+            )
+            try:
+                if img_path and os.path.exists(img_path):
+                    os.remove(img_path)
+            except Exception:
+                pass
+        else:
+            success = studio.create_from_text(
+                text if text else "AI WHITEBOARD",
+                output_path,
+                duration_sec=duration,
+                fps=30,
+                audio_path=audio_path,
+                progress_callback=update_progress
+            )
+
+        if success and os.path.exists(output_path):
+            RENDER_TASKS[task_id] = {
+                "status": "completed",
+                "progress": 100,
+                "message": "Hoàn tất video vẽ tay!",
+                "video_url": f"/static/outputs/{output_filename}"
+            }
+        else:
+            RENDER_TASKS[task_id] = {
+                "status": "failed",
+                "progress": 0,
+                "message": "Không thể hoàn thành render video",
+                "video_url": None
+            }
+    except Exception as e:
+        print(f"[Worker Error in task {task_id}]: {e}")
+        RENDER_TASKS[task_id] = {
+            "status": "failed",
+            "progress": 0,
+            "message": f"Lỗi render: {str(e)}",
+            "video_url": None
+        }
 
 @app.post("/api/render")
 async def render_video_api(
@@ -120,7 +185,7 @@ async def render_video_api(
     voice_audio_file: UploadFile = File(None),
     voice_lang: str = Form("Vietnamese")
 ):
-    """Render video hoàn chỉnh tích hợp giọng nói VoiceStudio"""
+    """Khởi động tác vụ render video phi phong tỏa (Non-blocking), trả về task_id ngay lập tức"""
     try:
         custom_hand_path = None
         if hand_file:
@@ -129,7 +194,6 @@ async def render_video_api(
                 f.write(await hand_file.read())
             custom_hand_path = hand_path
 
-        # Xử lý âm thanh thuyết minh (Voiceover từ VoiceStudio hoặc File tải lên)
         audio_path = None
         if voice_audio_file:
             audio_path = os.path.join(UPLOAD_DIR, f"voice_{uuid.uuid4().hex[:8]}.wav")
@@ -146,46 +210,46 @@ async def render_video_api(
                 audio_path = temp_voice_path
 
         studio = WhiteboardStudio(hand_img_path=custom_hand_path, preset=preset)
-        output_filename = f"video_{uuid.uuid4().hex[:8]}.mp4"
+        task_id = uuid.uuid4().hex[:8]
+        output_filename = f"video_{task_id}.mp4"
         output_path = os.path.join(OUTPUT_DIR, output_filename)
 
+        img_path = None
         if source_type == "image":
             if not file:
                 raise HTTPException(status_code=400, detail="Thiếu file ảnh")
-            img_path = os.path.join(UPLOAD_DIR, f"img_{uuid.uuid4().hex[:8]}.png")
+            img_path = os.path.join(UPLOAD_DIR, f"img_{task_id}.png")
             with open(img_path, "wb") as f:
                 f.write(await file.read())
 
-            success = studio.create_from_image(
-                img_path,
-                output_path,
-                sketch_mode=style,
-                duration_sec=duration,
-                fps=30,
-                audio_path=audio_path
-            )
-            # Dọn dẹp file upload tạm
-            try:
-                os.remove(img_path)
-            except Exception:
-                pass
-        else:
-            success = studio.create_from_text(
-                text if text else "AI WHITEBOARD",
-                output_path,
-                duration_sec=duration,
-                fps=30,
-                audio_path=audio_path
-            )
+        RENDER_TASKS[task_id] = {
+            "status": "processing",
+            "progress": 2,
+            "message": "Đang chuẩn bị khung vẽ và đường chuyển động...",
+            "video_url": None
+        }
 
-        if not success:
-            raise HTTPException(status_code=500, detail="Không thể tạo video nét vẽ")
+        # Khởi chạy trong Background Thread độc lập
+        thread = threading.Thread(
+            target=_run_render_worker,
+            args=(task_id, studio, source_type, img_path, text, output_path, output_filename, style, duration, audio_path),
+            daemon=True
+        )
+        thread.start()
 
-        return {"video_url": f"/static/outputs/{output_filename}"}
+        return {"task_id": task_id}
 
     except Exception as e:
-        print(f"Error rendering video: {e}")
+        print(f"Error starting render: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/render/status/{task_id}")
+def get_render_status(task_id: str):
+    """Truy vấn tiến trình render thời gian thực (0% -> 100%)"""
+    task = RENDER_TASKS.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Không tìm thấy task")
+    return task
 
 if __name__ == "__main__":
     import uvicorn
@@ -194,11 +258,10 @@ if __name__ == "__main__":
     port = 8000
     host = "127.0.0.1"
     print("\n" + "=" * 50)
-    print(f"  WHITEBOARD STUDIO PRO ENGINE")
+    print(f"  WHITEBOARD STUDIO PRO ENGINE (V2.0 HIGH-PERFORMANCE)")
     print(f"  Đang khởi động tại: http://{host}:{port}")
     print("=" * 50 + "\n")
 
-    # Mở trình duyệt tự động
     try:
         webbrowser.open(f"http://{host}:{port}")
     except Exception:

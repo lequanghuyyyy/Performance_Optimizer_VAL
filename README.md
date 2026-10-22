@@ -1,4 +1,4 @@
-# Windows Performance Studio Pro (2026 - 2027 Edition)
+# Windows Performance Studio v2.1 Pro (2026 - 2027 Edition)
 
 A high-performance, hardware-adaptive Windows 10/11 optimization utility designed for eSports gaming latency reduction, background service debloating, AI tracking isolation, and developer workflow acceleration with zero system breakage.
 

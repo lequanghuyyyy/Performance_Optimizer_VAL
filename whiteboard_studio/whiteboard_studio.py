@@ -1,6 +1,6 @@
 """
 Whiteboard Studio - Complete Whiteboard Hand-Drawn Animation Generator
-Tự động chuyển ảnh/chữ sang tranh phác thảo (màu/đen trắng) và render video vẽ tay mượt mà.
+Tự động chuyển ảnh/chữ sang tranh phác thảo (màu/đen trắng) và render video vẽ tay mượt mà, chi tiết cao.
 """
 
 import os
@@ -30,50 +30,54 @@ RESOLUTION_PRESETS = {
 }
 
 class SketchConverter:
-    """Bộ lọc chuyển đổi ảnh thường sang tranh phác thảo (Sketch / Line Art)"""
+    """Bộ lọc chuyển đổi ảnh thường sang tranh phác thảo (Sketch / Line Art) bảo toàn chi tiết cao"""
 
     @staticmethod
     def to_pencil_sketch(img_bgr):
-        """Chuyển thành tranh phác thảo chì đen trắng (Black & White Pencil Sketch)"""
+        """Chuyển thành tranh phác thảo chì đen trắng sắc sảo (Black & White Pencil Sketch)"""
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         inv_gray = 255 - gray
-        blurred = cv2.GaussianBlur(inv_gray, (21, 21), 0)
-        # Kỹ thuật Color Dodge tạo hiệu ứng nét chì
+        # Dùng GaussianBlur kernel nhỏ (9x9) để không làm mất các chi tiết mảnh
+        blurred = cv2.GaussianBlur(inv_gray, (9, 9), 0)
         sketch = cv2.divide(gray, 255 - blurred, scale=256)
-        # Tăng độ tương phản nhẹ
-        sketch = cv2.convertScaleAbs(sketch, alpha=1.05, beta=-5)
+        sketch = cv2.convertScaleAbs(sketch, alpha=1.1, beta=-8)
         return cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
 
     @staticmethod
     def to_lineart(img_bgr):
         """Chuyển thành tranh nét vẽ viền đen trắng sắc sảo (Manga/Comic line art)"""
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-        gray = cv2.medianBlur(gray, 5)
+        gray = cv2.medianBlur(gray, 3)
         edges = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 9, 2
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 7, 2
         )
         return cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
 
     @staticmethod
     def to_color_sketch(img_bgr):
-        """Chuyển thành tranh phác thảo CÓ MÀU (Color Pencil / Watercolor Sketch)"""
-        # 1. Tạo nét chì đen
-        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        """Chuyển thành tranh phác thảo CÓ MÀU với độ chi tiết cao (Preserved Detail Sketch)"""
+        # 1. Tăng cường độ nét chi tiết (Unsharp Masking) từ ảnh gốc
+        blurred = cv2.GaussianBlur(img_bgr, (0, 0), 2.0)
+        sharpened = cv2.addWeighted(img_bgr, 1.35, blurred, -0.35, 0)
+
+        # 2. Sử dụng Edge-Preserving Filter thay vì Bilateral Filter để giữ nguyên vẹn đường viền & texture
+        smooth_color = cv2.edgePreservingFilter(sharpened, flags=cv2.NORMCONV_FILTER, sigma_s=30, sigma_r=0.25)
+
+        # 3. Tạo nét chì chi tiết với kernel mảnh (7x7)
+        gray = cv2.cvtColor(sharpened, cv2.COLOR_BGR2GRAY)
         inv_gray = 255 - gray
-        blurred = cv2.GaussianBlur(inv_gray, (21, 21), 0)
-        pencil_mask = cv2.divide(gray, 255 - blurred, scale=256)
+        blurred_gray = cv2.GaussianBlur(inv_gray, (7, 7), 0)
+        pencil_mask = cv2.divide(gray, 255 - blurred_gray, scale=256)
+        pencil_mask = cv2.convertScaleAbs(pencil_mask, alpha=1.05, beta=-3)
 
-        # 2. Làm mịn mảng màu như màu nước bằng Bilateral Filter
-        smooth_color = cv2.bilateralFilter(img_bgr, d=9, sigmaColor=75, sigmaSpace=75)
-
-        # 3. Tăng độ rực rỡ (saturation) của màu sắc
+        # 4. Tăng độ rực rỡ nhẹ cho màu sắc
         hsv = cv2.cvtColor(smooth_color, cv2.COLOR_BGR2HSV).astype(np.float32)
-        hsv[:, :, 1] = np.clip(hsv[:, :, 1] * 1.3, 0, 255)
+        hsv[:, :, 1] = np.clip(hsv[:, :, 1] * 1.15, 0, 255)
         vibrant_color = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
 
-        # 4. Hòa trộn mảng màu với nét chì
+        # 5. Hòa trộn mảng màu với nét viền chì chi tiết
         norm_pencil = pencil_mask.astype(np.float32) / 255.0
-        color_sketch = (vibrant_color.astype(np.float32) * norm_pencil[:, :, None]).astype(np.uint8)
+        color_sketch = (vibrant_color.astype(np.float32) * (0.25 + 0.75 * norm_pencil[:, :, None])).astype(np.uint8)
         return color_sketch
 
     @classmethod
@@ -86,7 +90,7 @@ class SketchConverter:
         elif mode in ("lineart", "line", "manga"):
             return cls.to_lineart(img_bgr)
         elif mode in ("none", "raw", "original"):
-            return img_bgr
+            return img_bgr.copy()
         else:
             return cls.to_color_sketch(img_bgr)
 
@@ -102,7 +106,6 @@ class HandSpriteManager:
         if pts is None:
             return (15, 15)
         pts = pts.reshape(-1, 2)
-        # Giả định thông thường: ngòi bút nằm ở góc gần gốc tọa độ (x+y nhỏ nhất)
         scores = pts[:, 0] + pts[:, 1]
         best_pt = pts[np.argmin(scores)]
         return int(best_pt[0]), int(best_pt[1])
@@ -131,7 +134,7 @@ class HandSpriteManager:
         marker_start = tip
         marker_end = (int(290 * scale), int(290 * scale))
         cv2.line(canvas, marker_start, marker_end, (35, 35, 35, 255), int(24 * scale))
-        # Vòng trang trí kim loại
+        # Vòng kim loại
         cv2.line(canvas, (int(90 * scale), int(90 * scale)), (int(115 * scale), int(115 * scale)), (210, 210, 210, 255), int(26 * scale))
         # Ngòi bút vát nhọn màu đen
         pts_tip = np.array([
@@ -145,23 +148,17 @@ class HandSpriteManager:
 
     @classmethod
     def load_or_create(cls, hand_path=None, custom_tip=None, target_video_width=1080):
-        """Nạp ảnh bàn tay người dùng hoặc tạo bàn tay chuẩn, tự động scale theo khung hình"""
-        target_hand_w = int(target_video_width * 0.30) # Chiều rộng bàn tay chiếm ~30% khung hình
+        target_hand_w = int(target_video_width * 0.30)
 
         if hand_path and os.path.exists(hand_path):
             hand = cv2.imread(hand_path, cv2.IMREAD_UNCHANGED)
             if hand is None or hand.shape[2] < 4:
-                print(f"[Cảnh báo] Ảnh '{hand_path}' không có kênh Alpha (trong suốt), dùng bàn tay mặc định.")
                 hand, tip = cls.create_procedural_hand(1.0)
             else:
-                if custom_tip:
-                    tip = custom_tip
-                else:
-                    tip = cls.auto_detect_pen_tip(hand)
+                tip = custom_tip if custom_tip else cls.auto_detect_pen_tip(hand)
         else:
             hand, tip = cls.create_procedural_hand(1.0)
 
-        # Scale bàn tay cho vừa vặn với kích thước video
         orig_h, orig_w = hand.shape[:2]
         scale_factor = target_hand_w / float(orig_w)
         new_w = int(orig_w * scale_factor)
@@ -177,12 +174,6 @@ class WhiteboardStudio:
     """Engine sản xuất video Whiteboard Animation mượt mà và toàn diện"""
 
     def __init__(self, hand_img_path=None, hand_tip=None, preset="youtube", custom_size=None):
-        """
-        :param hand_img_path: Đường dẫn ảnh PNG bàn tay trong suốt (nếu có)
-        :param hand_tip: Tọa độ ngòi bút (x, y) trên ảnh bàn tay
-        :param preset: 'tiktok', 'reels', 'shorts', 'youtube', 'square', 'portrait'
-        :param custom_size: (width, height) nếu không dùng preset
-        """
         if custom_size:
             self.width, self.height = custom_size
         else:
@@ -196,7 +187,6 @@ class WhiteboardStudio:
         )
 
     def _fit_to_canvas(self, img_bgr, padding_ratio=0.86):
-        """Tự động co giãn ảnh giữ nguyên tỉ lệ và đặt vào giữa canvas bảng trắng"""
         h_orig, w_orig = img_bgr.shape[:2]
         max_w = int(self.width * padding_ratio)
         max_h = int(self.height * padding_ratio)
@@ -208,7 +198,6 @@ class WhiteboardStudio:
         interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LANCZOS4
         resized = cv2.resize(img_bgr, (new_w, new_h), interpolation=interp)
 
-        # Tạo canvas trắng tinh
         canvas = np.full((self.height, self.width, 3), 255, dtype=np.uint8)
         off_x = (self.width - new_w) // 2
         off_y = (self.height - new_h) // 2
@@ -217,19 +206,18 @@ class WhiteboardStudio:
         bbox = (off_x, off_y, new_w, new_h)
         return canvas, bbox
 
-    def _build_smooth_trajectory(self, target_canvas, content_bbox=None, brush_radius=14):
+    def _build_smooth_trajectory(self, target_canvas, content_bbox=None, brush_radius=5):
         """
-        Trích xuất nét vẽ và sinh đường di chuyển mượt mà:
-        - Nếu có content_bbox (vẽ ảnh): Gồm Pha 1 (Vẽ nét viền) + Pha 2 (Tô màu phủ kín 100% diện tích).
-        - Nếu không có content_bbox (vẽ chữ): Quét theo nét viền chữ thông thường.
+        Trích xuất nét vẽ và sinh đường di chuyển mượt mà bảo toàn chi tiết cao:
+        - Pha 1: Nét viền tinh xảo (bắt trọn chi tiết nhỏ).
+        - Pha 2: Tô màu phủ kín nhẹ nhàng không phá vỡ nét viền.
         """
         h_canvas, w_canvas = target_canvas.shape[:2]
         gray = cv2.cvtColor(target_canvas, cv2.COLOR_BGR2GRAY)
 
-        # --- PHA 1: NÉT VIỀN PHÁC THẢO CHI TIẾT ---
-        # Kết hợp Canny nhạy cảm + Adaptive Threshold để bắt trọn từng chi tiết nhỏ
-        canny_edges = cv2.Canny(gray, 30, 95)
-        adapt_edges = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 3)
+        # --- PHA 1: NÉT VIỀN ĐA NGƯỠNG (MULTI-SCALE EDGES) ---
+        canny_edges = cv2.Canny(gray, 25, 80)
+        adapt_edges = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 7, 2)
         combined_edges = cv2.bitwise_or(canny_edges, adapt_edges)
 
         if content_bbox:
@@ -244,7 +232,6 @@ class WhiteboardStudio:
 
         trajectory = []
         if paths:
-            # Sắp xếp Greedy Nearest Neighbor
             ordered_paths = []
             curr = np.array([self.width * 0.1, self.height * 0.1])
             while paths:
@@ -260,7 +247,7 @@ class WhiteboardStudio:
                     start_pt = path[0].astype(np.float32)
                     dist = np.linalg.norm(start_pt - last_pt)
 
-                    num_transit = int(np.clip(dist / 45.0, 4, 18))
+                    num_transit = int(np.clip(dist / 40.0, 3, 14))
                     for t in np.linspace(0, 1, num_transit, endpoint=False)[1:]:
                         ease_t = t * t * (3.0 - 2.0 * t)
                         transit_pt = (1.0 - ease_t) * last_pt + ease_t * start_pt
@@ -269,10 +256,10 @@ class WhiteboardStudio:
                 for pt in path:
                     trajectory.append((int(pt[0]), int(pt[1]), True, 1.0))
 
-        # --- PHA 2: TÔ MÀU PHỦ KÍN 100% DIỆN TÍCH (Chỉ dành cho vẽ ảnh để không bị thiếu chi tiết) ---
+        # --- PHA 2: TÔ MÀU PHỦ KÍN MỊN MÀNG (Bán kính cọ hợp lý, không quét đè phá hỏng nét viền) ---
         if content_bbox:
-            step_y = int(brush_radius * 1.5)
-            sweep_step_x = 22
+            step_y = max(6, int(brush_radius * 1.5))
+            sweep_step_x = max(10, int(brush_radius * 2.0))
             fill_pts = []
             row_idx = 0
 
@@ -286,19 +273,18 @@ class WhiteboardStudio:
             if trajectory and fill_pts:
                 last_pt = np.array(trajectory[-1][:2], dtype=np.float32)
                 start_pt = np.array(fill_pts[0], dtype=np.float32)
-                num_transit = 15
+                num_transit = 12
                 for t in np.linspace(0, 1, num_transit):
                     ease_t = t * t * (3.0 - 2.0 * t)
                     transit_pt = (1.0 - ease_t) * last_pt + ease_t * start_pt
                     trajectory.append((int(transit_pt[0]), int(transit_pt[1]), False, 1.0))
 
             for pt in fill_pts:
-                trajectory.append((int(pt[0]), int(pt[1]), True, 2.4)) # Cọ quét màu to hơn để phủ kín
+                trajectory.append((int(pt[0]), int(pt[1]), True, 1.6))
 
         return trajectory
 
     def _overlay_hand_smooth(self, frame, hand_x, hand_y):
-        """Dán bàn tay lên frame với độ mượt tuyệt đối và xử lý an toàn mép màn hình"""
         h_hand, w_hand = self.hand_sprite.shape[:2]
         h_bg, w_bg = frame.shape[:2]
 
@@ -318,9 +304,9 @@ class WhiteboardStudio:
                     alpha * crop_hand[:, :, c] + (1.0 - alpha) * frame[y1:y2, x1:x2, c]
                 ).astype(np.uint8)
 
-    def render_canvas(self, target_canvas, output_mp4, duration_sec=6, fps=30, brush_radius=14, hold_sec=1.5, content_bbox=None, audio_path=None):
-        """Thực thi render video nét vẽ bàn tay hoàn chỉnh (Hỗ trợ audio và tô kín chi tiết)"""
-        # Nếu có audio thuyết minh, tự động đồng bộ thời lượng video khớp 100% với giọng đọc
+    def render_canvas(self, target_canvas, output_mp4, duration_sec=6, fps=30, brush_radius=5, hold_sec=1.5, content_bbox=None, audio_path=None, progress_callback=None):
+        """Thực thi render video nét vẽ bàn tay hoàn chỉnh với callback tiến trình thực tế"""
+        # Đồng bộ thời lượng theo file giọng nói nếu có
         if audio_path and os.path.exists(audio_path):
             try:
                 import subprocess
@@ -329,22 +315,38 @@ class WhiteboardStudio:
                 audio_dur = float(res.stdout.strip())
                 if audio_dur > 1.0:
                     duration_sec = audio_dur + hold_sec
-                    print(f"[Đồng bộ VoiceStudio] Tự động khớp thời lượng video theo giọng đọc: {duration_sec:.1f}s")
+                    print(f"[Đồng bộ VoiceStudio] Tự động khớp thời lượng video: {duration_sec:.1f}s")
             except Exception as e:
                 print(f"[Cảnh báo ffprobe audio]: {e}")
 
-        trajectory = self._build_smooth_trajectory(target_canvas, content_bbox=content_bbox, brush_radius=brush_radius)
+        # Tự động điều chỉnh kích thước cọ vẽ nét viền theo độ phân giải canvas
+        actual_brush = max(4, int(self.width / 220)) if brush_radius is None else brush_radius
+
+        if progress_callback:
+            progress_callback(5, "Đang phân tích và trích xuất nét vẽ chi tiết...")
+
+        trajectory = self._build_smooth_trajectory(target_canvas, content_bbox=content_bbox, brush_radius=actual_brush)
         if not trajectory:
             print("[Lỗi] Không tìm thấy nét vẽ nào trên ảnh!")
             return False
 
         total_frames = int(fps * duration_sec)
         hold_frames = int(fps * hold_sec)
-        draw_frames = max(1, total_frames - hold_frames - int(fps * 0.8)) # 0.8s cho bàn tay rút lui
+        draw_frames = max(1, total_frames - hold_frames - int(fps * 0.8))
 
         raw_temp = output_mp4 + ".raw.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         writer = cv2.VideoWriter(raw_temp, fourcc, fps, (self.width, self.height))
+
+        # Kiểm tra tính tương thích của VideoWriter
+        if not writer.isOpened():
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            raw_temp = output_mp4 + ".raw.avi"
+            writer = cv2.VideoWriter(raw_temp, fourcc, fps, (self.width, self.height))
+
+        if not writer.isOpened():
+            print("[Lỗi] Không thể mở OpenCV VideoWriter!")
+            return False
 
         mask = np.zeros((self.height, self.width), dtype=np.uint8)
         white_bg = np.full((self.height, self.width, 3), 255, dtype=np.uint8)
@@ -367,25 +369,23 @@ class WhiteboardStudio:
                     px, py, is_draw = pt_info[0], pt_info[1], pt_info[2]
                     scale_factor = pt_info[3] if len(pt_info) > 3 else 1.0
                     if is_draw:
-                        cv2.circle(mask, (px, py), int(brush_radius * scale_factor), 255, -1)
-                
+                        cv2.circle(mask, (px, py), int(actual_brush * scale_factor), 255, -1)
+
                 target_pt = trajectory[min(next_pt_idx - 1, total_pts - 1)]
                 target_hand_pos = np.array([target_pt[0], target_pt[1]], dtype=np.float32)
-                # Bộ lọc thông thấp (EMA) giúp tay di chuyển êm ái
                 current_hand_pos = 0.65 * target_hand_pos + 0.35 * current_hand_pos
                 pt_idx = next_pt_idx
             else:
-                # 2. Hoàn thành vẽ -> Hiệu ứng bàn tay lướt mượt ra khỏi màn hình (Exit animation)
+                # 2. Hoàn thành vẽ -> Rút tay ra khỏi khung hình
                 if exit_start_pos is None:
                     exit_start_pos = current_hand_pos.copy()
                     exit_frame_count = 0
-                
+
                 exit_frame_count += 1
                 exit_duration = int(fps * 0.8)
                 if exit_frame_count <= exit_duration:
                     t = exit_frame_count / float(exit_duration)
-                    ease_t = t * t # Ease-in gia tốc rơi
-                    # Lướt xéo xuống góc phải màn hình
+                    ease_t = t * t
                     dest_x = self.width + 100
                     dest_y = self.height + 150
                     current_hand_pos = (1.0 - ease_t) * exit_start_pos + ease_t * np.array([dest_x, dest_y])
@@ -403,9 +403,17 @@ class WhiteboardStudio:
 
             writer.write(frame)
 
+            # Cập nhật tiến trình thực tế mỗi 15 frame
+            if progress_callback and (frame_idx % 15 == 0 or frame_idx == total_frames - 1):
+                pct = int(10 + (frame_idx / float(total_frames)) * 80)
+                progress_callback(pct, f"Đang vẽ khung hình {frame_idx + 1}/{total_frames} ({pct}%)...")
+
         writer.release()
 
-        # Chuyển đổi sang H.264 YUV420P với faststart (ghép âm thanh nếu có)
+        if progress_callback:
+            progress_callback(92, "Đang mã hóa H.264 & ghép âm thanh thuyết minh...")
+
+        # Chuyển đổi sang chuẩn H.264 YUV420P với faststart (ghép âm thanh nếu có)
         try:
             import subprocess
             if audio_path and os.path.exists(audio_path):
@@ -414,6 +422,7 @@ class WhiteboardStudio:
                     '-i', raw_temp,
                     '-i', audio_path,
                     '-c:v', 'libx264',
+                    '-preset', 'fast',
                     '-pix_fmt', 'yuv420p',
                     '-c:a', 'aac',
                     '-b:a', '192k',
@@ -426,6 +435,7 @@ class WhiteboardStudio:
                     'ffmpeg', '-y', '-v', 'error',
                     '-i', raw_temp,
                     '-c:v', 'libx264',
+                    '-preset', 'fast',
                     '-pix_fmt', 'yuv420p',
                     '-movflags', '+faststart',
                     output_mp4
@@ -443,37 +453,25 @@ class WhiteboardStudio:
             if os.path.exists(raw_temp):
                 os.replace(raw_temp, output_mp4)
 
+        if progress_callback:
+            progress_callback(100, "Hoàn tất video!")
+
         print(f"Render hoàn tất: {output_mp4}")
         return True
 
-    def create_from_image(self, image_path, output_mp4, sketch_mode="color", duration_sec=6, fps=30, audio_path=None):
-        """
-        Nhập 1 ảnh bất kỳ -> Tự chuyển thành tranh phác thảo -> Vẽ viền & tô màu phủ kín 100% -> Xuất video
-        :param sketch_mode: 'color' (phác thảo màu), 'pencil' (chì đen trắng), 'lineart' (nét viền), 'none' (nguyên bản)
-        :param audio_path: Đường dẫn file âm thanh thuyết minh (VoiceStudio)
-        """
+    def create_from_image(self, image_path, output_mp4, sketch_mode="color", duration_sec=6, fps=30, audio_path=None, progress_callback=None):
         img = cv2.imread(image_path)
         if img is None:
             raise FileNotFoundError(f"Không thể mở file ảnh: {image_path}")
 
-        # 1. Chuyển sang phong cách tranh phác thảo mong muốn
         sketch_img = SketchConverter.convert(img, mode=sketch_mode)
-
-        # 2. Căn chỉnh ảnh vào canvas theo preset độ phân giải (TikTok, YouTube...)
         canvas, bbox = self._fit_to_canvas(sketch_img)
+        return self.render_canvas(canvas, output_mp4, duration_sec=duration_sec, fps=fps, content_bbox=bbox, audio_path=audio_path, progress_callback=progress_callback)
 
-        # 3. Render video vẽ tay (2 pha: nét viền + tô màu phủ kín 100% diện tích)
-        return self.render_canvas(canvas, output_mp4, duration_sec=duration_sec, fps=fps, content_bbox=bbox, audio_path=audio_path)
-
-    def create_from_text(self, text, output_mp4, duration_sec=4, fps=30, audio_path=None):
-        """Nhập 1 chuỗi chữ (String) -> Render video bàn tay viết chữ lên bảng trắng"""
+    def create_from_text(self, text, output_mp4, duration_sec=4, fps=30, audio_path=None, progress_callback=None):
         canvas = np.full((self.height, self.width, 3), 255, dtype=np.uint8)
-        
-        # Căn chỉnh kích thước chữ
         font_scale = max(1.5, self.width / 500.0)
         thickness = max(3, int(font_scale * 2.5))
-        
-        # Tính toán tọa độ để chữ nằm giữa bảng
         text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
         text_x = (self.width - text_size[0]) // 2
         text_y = (self.height + text_size[1]) // 2
@@ -481,52 +479,4 @@ class WhiteboardStudio:
         cv2.putText(canvas, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 
                     font_scale, (30, 30, 30), thickness, cv2.LINE_AA)
         
-        return self.render_canvas(canvas, output_mp4, duration_sec=duration_sec, fps=fps, content_bbox=None, audio_path=audio_path)
-
-    def create_from_multiple_images(self, image_paths, output_mp4, sketch_mode="color", sec_per_scene=5, fps=30):
-        """Nhập danh sách nhiều ảnh -> Lần lượt vẽ từng ảnh và ghép lại thành một video dài"""
-        temp_files = []
-        for idx, img_path in enumerate(image_paths):
-            temp_name = f"__temp_scene_{idx}.mp4"
-            self.create_from_image(img_path, temp_name, sketch_mode=sketch_mode, duration_sec=sec_per_scene, fps=fps)
-            temp_files.append(temp_name)
-
-        # Ghép các video thành phần
-        raw_concat = output_mp4 + ".raw.mp4"
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(raw_concat, fourcc, fps, (self.width, self.height))
-
-        for temp_name in temp_files:
-            cap = cv2.VideoCapture(temp_name)
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                out.write(frame)
-            cap.release()
-            try:
-                os.remove(temp_name)
-            except Exception:
-                pass
-
-        out.release()
-
-        # Convert to H.264
-        try:
-            import subprocess
-            cmd = ['ffmpeg', '-y', '-v', 'error', '-i', raw_concat, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', output_mp4]
-            res = subprocess.run(cmd, capture_output=True)
-            if res.returncode == 0 and os.path.exists(output_mp4):
-                try:
-                    os.remove(raw_concat)
-                except Exception:
-                    pass
-            else:
-                if os.path.exists(raw_concat):
-                    os.replace(raw_concat, output_mp4)
-        except Exception:
-            if os.path.exists(raw_concat):
-                os.replace(raw_concat, output_mp4)
-
-        print(f"Đã ghép xong toàn bộ các cảnh vào video: {output_mp4}")
-        return True
+        return self.render_canvas(canvas, output_mp4, duration_sec=duration_sec, fps=fps, content_bbox=None, audio_path=audio_path, progress_callback=progress_callback)

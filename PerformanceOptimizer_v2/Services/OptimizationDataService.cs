@@ -95,37 +95,37 @@ namespace PerformanceOptimizer.Services
             {
                 Id = 1,
                 Category = "⚡ Hiệu năng & CPU",
-                Title = "Power Plan: High Performance (100% Max Turbo Boost Unlocked)",
-                Description = "Kích hoạt gói nguồn High Performance, mở khóa toàn bộ xung nhịp Turbo Boost (Aggressive Mode, EPP = 0, Boost Policy = 100%), cho phép CPU bung đỉnh xung đơn nhân và đa nhân (4.0+ GHz).",
-                Badges = new List<string> { "Max Turbo Boost", "FPS Ổn Định", "Khuyên Dùng" },
+                Title = "Power Plan: High Performance (100% Max Turbo Boost Cho Mọi Máy)",
+                Description = "Tối ưu hóa trực tiếp trên gói nguồn hiện tại của máy (tương thích 100% cả PC Desktop và Laptop OEM Asus, Lenovo, Dell, HP). Mở khóa Max Turbo Boost, cho phép nhân nhàn rỗi ngủ sâu C-State để dồn trọn vẹn TDP bung đỉnh xung 4.0 - 5.0+ GHz.",
+                Badges = new List<string> { "Max Turbo 4.0+ GHz", "Không Tụt Xung", "Mọi Máy PC/Laptop" },
                 Icon = "⚡",
                 CheckStatus = () =>
                 {
-                    string active = NativeTweakService.GetString(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes", "ActivePowerScheme", "");
-                    return active.Contains("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", StringComparison.OrdinalIgnoreCase);
+                    int max = NativeTweakService.GetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Power\PowerSettings\54533251-82be-4824-96c1-47b60b740d00\bc5038f7-23e0-4960-96da-33abaf5935ec", "CurrentValue", -1);
+                    return max == 100;
                 },
                 NativeApply = () =>
                 {
-                    return NativeTweakService.EnsureHighPerformancePowerPlan();
+                    return NativeTweakService.EnsureHighPerformancePowerPlan(hardware);
                 },
                 NativeRevert = () =>
                 {
-                    NativeTweakService.RunCli("powercfg.exe", "/setactive 381b4222-f694-41f0-9685-ff5bb260df2e"); // Balanced
+                    NativeTweakService.RunCli("powercfg.exe", "-setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 50");
+                    NativeTweakService.RunCli("powercfg.exe", "-setactive scheme_current");
                     return true;
                 },
                 Script = @"
-& powercfg.exe /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null | Out-Null
 & powercfg.exe -setacvalueindex scheme_current sub_processor PROCTHROTTLEMAX 100 2>$null | Out-Null
 & powercfg.exe -setacvalueindex scheme_current sub_processor PROCTHROTTLEMIN 5 2>$null | Out-Null
 & powercfg.exe -setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 2 2>$null | Out-Null
-& powercfg.exe -setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 45bcc044-d885-43e2-8605-ee0ec6e96b59 100 2>$null | Out-Null
-& powercfg.exe -setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 0 2>$null | Out-Null
+& powercfg.exe -setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 20 2>$null | Out-Null
 & powercfg.exe -setactive scheme_current 2>$null | Out-Null
-Write-Host '[OK] Da kich hoat High Performance Plan voi Max Aggressive Turbo Boost (4.0+ GHz).' -ForegroundColor Green
+Write-Host '[OK] Da toi uu Power Plan tren scheme_current (Bung Max Turbo 4.0+ GHz tren moi dong may).' -ForegroundColor Green
 ",
                 RevertScript = @"
-& powercfg.exe /setactive 381b4222-f694-41f0-9685-ff5bb260df2e 2>$null | Out-Null
-Write-Host '[OK] Da khoi phuc Power Plan Balanced mac dinh.' -ForegroundColor Yellow
+& powercfg.exe -setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 50 2>$null | Out-Null
+& powercfg.exe -setactive scheme_current 2>$null | Out-Null
+Write-Host '[OK] Da dua Power Plan ve che do can bang mac dinh.' -ForegroundColor Yellow
 "
             });
 
@@ -173,9 +173,13 @@ Write-Host '[OK] Da khoi phuc Win32PrioritySeparation ve 2 mac dinh.' -Foregroun
                 CheckStatus = () => NativeTweakService.GetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 0) == 2,
                 NativeApply = () =>
                 {
-                    NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 2);
+                    // Tự động thích ứng GPU: Chỉ bật HAGS nếu có GPU rời (NVIDIA RTX/GTX, AMD RX, Intel Arc)
+                    // Nếu là GPU tích hợp (Intel UHD/Iris Xe hoặc AMD Radeon Vega/680M/780M), giữ HwSchMode = 1 để tránh nghẽn RAM dùng chung
+                    int hwSch = hardware.HasDedicatedGpu ? 2 : 1;
+                    NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", hwSch);
                     NativeTweakService.SetDword(RegistryHive.CurrentUser, @"System\GameConfigStore", "GameDVR_Enabled", 0);
-                    NativeTweakService.SetDword(RegistryHive.CurrentUser, @"System\GameConfigStore", "GameDVR_FSEBehaviorMode", 2);
+                    // Giữ GameDVR_FSEBehaviorMode = 0 để Windows 11 bảo toàn Independent Flip Model (giảm lag và mượt mà cho Borderless/Fullscreen)
+                    NativeTweakService.SetDword(RegistryHive.CurrentUser, @"System\GameConfigStore", "GameDVR_FSEBehaviorMode", 0);
                     NativeTweakService.SetDword(RegistryHive.CurrentUser, @"Software\Microsoft\Windows\CurrentVersion\GameDVR", "AppCaptureEnabled", 0);
                     NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SOFTWARE\Policies\Microsoft\Windows\GameDVR", "AllowGameDVR", 0);
                     return true;
@@ -190,10 +194,16 @@ Write-Host '[OK] Da khoi phuc Win32PrioritySeparation ve 2 mac dinh.' -Foregroun
                     return true;
                 },
                 Script = @"
-Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name 'HwSchMode' -Value 2 -Type DWord -ErrorAction SilentlyContinue
+$hasDedicated = " + (hardware.HasDedicatedGpu ? "1" : "0") + @";
+if ($hasDedicated -eq 1) {
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name 'HwSchMode' -Value 2 -Type DWord -ErrorAction SilentlyContinue
+} else {
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name 'HwSchMode' -Value 1 -Type DWord -ErrorAction SilentlyContinue
+}
 Set-ItemProperty -Path 'HKCU:\System\GameConfigStore' -Name 'GameDVR_Enabled' -Value 0 -Type DWord -ErrorAction SilentlyContinue
+Set-ItemProperty -Path 'HKCU:\System\GameConfigStore' -Name 'GameDVR_FSEBehaviorMode' -Value 0 -Type DWord -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR' -Name 'AllowGameDVR' -Value 0 -Type DWord -ErrorAction SilentlyContinue
-Write-Host '[OK] Da bat HAGS va tat GameDVR.' -ForegroundColor Green
+Write-Host '[OK] Da cau hinh HAGS thich ung va tat GameDVR.' -ForegroundColor Green
 ",
                 RevertScript = @"
 Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name 'HwSchMode' -Value 1 -Type DWord -ErrorAction SilentlyContinue
@@ -219,6 +229,8 @@ Write-Host '[OK] Da khoi phuc HAGS va GameDVR ve mac dinh.' -ForegroundColor Yel
                 },
                 NativeApply = () =>
                 {
+                    // Chỉ gán nếu máy có GPU rời (NVIDIA / AMD Radeon RX / Intel Arc) để tránh lỗi gọi Direct3D sai trên máy chỉ có iGPU
+                    if (!hardware.HasDedicatedGpu) return true;
                     var paths = ResolveGpuAppPaths();
                     foreach (var path in paths)
                     {
@@ -236,17 +248,22 @@ Write-Host '[OK] Da khoi phuc HAGS va GameDVR ve mac dinh.' -ForegroundColor Yel
                     return true;
                 },
                 Script = @"
-$paths = @(
-    'C:\Riot Games\VALORANT\live\ShooterGame\Binaries\Win64\VALORANT-Win64-Shipping.exe',
-    'D:\Riot Games\VALORANT\live\ShooterGame\Binaries\Win64\VALORANT-Win64-Shipping.exe',
-    'C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\bin\win64\cs2.exe'
-)
-foreach ($p in $paths) {
-    if (Test-Path $p) {
-        Set-ItemProperty -Path 'HKCU:\Software\Microsoft\DirectX\UserGpuPreferences' -Name $p -Value 'GpuPreference=2;' -Type String -ErrorAction SilentlyContinue
+$hasDedicated = " + (hardware.HasDedicatedGpu ? "1" : "0") + @";
+if ($hasDedicated -eq 1) {
+    $paths = @(
+        'C:\Riot Games\VALORANT\live\ShooterGame\Binaries\Win64\VALORANT-Win64-Shipping.exe',
+        'D:\Riot Games\VALORANT\live\ShooterGame\Binaries\Win64\VALORANT-Win64-Shipping.exe',
+        'C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\bin\win64\cs2.exe'
+    )
+    foreach ($p in $paths) {
+        if (Test-Path $p) {
+            Set-ItemProperty -Path 'HKCU:\Software\Microsoft\DirectX\UserGpuPreferences' -Name $p -Value 'GpuPreference=2;' -Type String -ErrorAction SilentlyContinue
+        }
     }
+    Write-Host '[OK] Da gan High Performance GPU cho Valorant va cac ung dung game/dev.' -ForegroundColor Green
+} else {
+    Write-Host '[INFO] May su dung GPU Onboard (iGPU), bo qua gan Direct3D Dedicated de toi uu tai nguyen he thong.' -ForegroundColor Cyan
 }
-Write-Host '[OK] Da gan High Performance GPU cho Valorant va cac ung dung game/dev.' -ForegroundColor Green
 ",
                 RevertScript = @"
 $paths = @(
@@ -267,8 +284,8 @@ Write-Host '[OK] Da xoa thiet lap GPU roi cho ung dung.' -ForegroundColor Yellow
                 Id = 5,
                 Category = "🌐 Mạng & MSI",
                 Title = "Tối ưu Card Mạng Dây Ethernet (Realtek / Intel / Killer)",
-                Description = "Tắt Energy Efficient Ethernet (EEE) và Green Ethernet (chống drop ping), tắt Interrupt Moderation để nhận gói tin game tức thì.",
-                Badges = new List<string> { "Giảm Ping Jitter", "Tắt Tiết Kiệm Điện", "Ping Ổn Định" },
+                Description = "Tắt Energy Efficient Ethernet (EEE) và Green Ethernet (chống drop ping), giữ BẬT Interrupt Moderation để triệt tiêu bão ngắt DPC Latency Spike trong game 128 tickrate.",
+                Badges = new List<string> { "Triệt Tiêu DPC Spike", "Tắt Tiết Kiệm Điện", "Ping Ổn Định" },
                 Icon = "🌐",
                 CheckStatus = () =>
                 {
@@ -296,25 +313,26 @@ Write-Host '[OK] Da xoa thiet lap GPU roi cho ung dung.' -ForegroundColor Yellow
                 },
                 NativeApply = () =>
                 {
-                    string cmd = "Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notmatch 'Wi-Fi|Wireless' } | ForEach-Object { Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Energy Efficient Ethernet' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue; Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Green Ethernet' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue; Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Interrupt Moderation' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue }";
+                    string cmd = "Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notmatch 'Wi-Fi|Wireless' } | ForEach-Object { Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Energy Efficient Ethernet' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue; Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Green Ethernet' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue; Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Interrupt Moderation' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue }";
                     return NativeTweakService.RunCli("powershell.exe", $"-NoProfile -NonInteractive -Command \"{cmd}\"", 12000);
                 },
                 NativeRevert = () =>
                 {
-                    string cmd = "Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notmatch 'Wi-Fi|Wireless' } | ForEach-Object { Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Energy Efficient Ethernet' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue; Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Interrupt Moderation' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue }";
+                    string cmd = "Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notmatch 'Wi-Fi|Wireless' } | ForEach-Object { Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Energy Efficient Ethernet' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue; Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Green Ethernet' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue; Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Interrupt Moderation' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue }";
                     return NativeTweakService.RunCli("powershell.exe", $"-NoProfile -NonInteractive -Command \"{cmd}\"", 12000);
                 },
                 Script = @"
 Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notmatch 'Wi-Fi|Wireless' } | ForEach-Object {
     Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Energy Efficient Ethernet' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue
     Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Green Ethernet' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue
-    Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Interrupt Moderation' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue
+    Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Interrupt Moderation' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue
 }
-Write-Host '[OK] Da toi uu Card Mang Day Ethernet.' -ForegroundColor Green
+Write-Host '[OK] Da toi uu Card Mang Day Ethernet (Bao ve Interrupt Moderation chong DPC Latency).' -ForegroundColor Green
 ",
                 RevertScript = @"
 Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notmatch 'Wi-Fi|Wireless' } | ForEach-Object {
     Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Energy Efficient Ethernet' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue
+    Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Green Ethernet' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue
     Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName 'Interrupt Moderation' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue
 }
 Write-Host '[OK] Da khoi phuc thiet lap Card Mang Day ve mac dinh.' -ForegroundColor Yellow
@@ -392,7 +410,7 @@ Write-Host '[OK] Da khoi phuc thiet lap Wi-Fi ve mac dinh.' -ForegroundColor Yel
                 {
                     NativeTweakService.SetCloudflareDns(false);
                     NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "NetworkThrottlingIndex", -1);
-                    NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "SystemResponsiveness", 0);
+                    NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "SystemResponsiveness", 20);
                     return true;
                 },
                 NativeRevert = () =>
@@ -407,7 +425,7 @@ Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object {
     Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ServerAddresses @('1.1.1.1', '1.0.0.1') -ErrorAction SilentlyContinue
 }
 Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type DWord -ErrorAction SilentlyContinue
-Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name 'SystemResponsiveness' -Value 0 -Type DWord -ErrorAction SilentlyContinue
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name 'SystemResponsiveness' -Value 20 -Type DWord -ErrorAction SilentlyContinue
 Write-Host '[OK] Da cau hinh DNS Cloudflare va TCP NoDelay.' -ForegroundColor Green
 ",
                 RevertScript = @"
@@ -676,12 +694,9 @@ Write-Host '[OK] Da bat lai Bing Web Search tren Start Menu.' -ForegroundColor Y
                 {
                     // LargeSystemCache = 0 bảo đảm RAM vật lý được ưu tiên cho Game, tránh crash driver GPU nvlddmkm
                     NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management", "LargeSystemCache", 0);
-                    // Chỉ khóa Kernel trên RAM nếu RAM vật lý >= 8GB để chống thiếu RAM
-                    ulong availMb = MemoryCleanerService.GetAvailableMemoryMb();
-                    if (availMb >= 4000 || Environment.Is64BitOperatingSystem)
-                    {
-                        NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management", "DisablePagingExecutive", 1);
-                    }
+                    // Thích ứng mọi cấu hình: Chỉ khóa Kernel trên RAM nếu RAM vật lý >= 8GB. Máy RAM <= 6GB giữ 0 để tránh cạn RAM.
+                    int disablePaging = (hardware.RamSizeGb >= 7.5) ? 1 : 0;
+                    NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management", "DisablePagingExecutive", disablePaging);
                     NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\FileSystem", "NtfsDisableLastAccessUpdate", 1);
                     return true;
                 },
@@ -694,9 +709,14 @@ Write-Host '[OK] Da bat lai Bing Web Search tren Start Menu.' -ForegroundColor Y
                 },
                 Script = @"
 Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'LargeSystemCache' -Value 0 -Type DWord -ErrorAction SilentlyContinue
-Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'DisablePagingExecutive' -Value 1 -Type DWord -ErrorAction SilentlyContinue
+$hasHighRam = " + (hardware.RamSizeGb >= 7.5 ? "1" : "0") + @";
+if ($hasHighRam -eq 1) {
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'DisablePagingExecutive' -Value 1 -Type DWord -ErrorAction SilentlyContinue
+} else {
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'DisablePagingExecutive' -Value 0 -Type DWord -ErrorAction SilentlyContinue
+}
 Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'NtfsDisableLastAccessUpdate' -Value 1 -Type DWord -ErrorAction SilentlyContinue
-Write-Host '[OK] Da khoa Kernel tren RAM va toi uu NTFS LastAccess an toan cho Gaming.' -ForegroundColor Green
+Write-Host '[OK] Da toi uu Kernel Memory thich ung theo dung luong RAM va tang toc NTFS.' -ForegroundColor Green
 ",
                 RevertScript = @"
 Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'LargeSystemCache' -Value 0 -Type DWord -ErrorAction SilentlyContinue
@@ -730,6 +750,9 @@ Write-Host '[OK] Da khoi phuc thiet lap Paging Executive ve mac dinh.' -Foregrou
 Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseSpeed' -Value '0' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold1' -Value '0' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold2' -Value '0' -ErrorAction SilentlyContinue
+Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'DoubleClickHeight' -Value '4' -ErrorAction SilentlyContinue
+Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'DoubleClickWidth' -Value '4' -ErrorAction SilentlyContinue
+Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'DoubleClickSpeed' -Value '500' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardDelay' -Value '0' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardSpeed' -Value '31' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Accessibility\StickyKeys' -Name 'Flags' -Value '506' -Type String -ErrorAction SilentlyContinue
@@ -739,6 +762,9 @@ Write-Host '[OK] Da cai dat chuot eSports 1:1 va phan hoi phim sieu toc (Thong b
 Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseSpeed' -Value '1' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold1' -Value '6' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold2' -Value '10' -ErrorAction SilentlyContinue
+Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'DoubleClickHeight' -Value '4' -ErrorAction SilentlyContinue
+Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'DoubleClickWidth' -Value '4' -ErrorAction SilentlyContinue
+Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'DoubleClickSpeed' -Value '500' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardDelay' -Value '1' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardSpeed' -Value '31' -ErrorAction SilentlyContinue
 Set-ItemProperty -Path 'HKCU:\Control Panel\Accessibility\StickyKeys' -Name 'Flags' -Value '510' -Type String -ErrorAction SilentlyContinue
@@ -1009,8 +1035,9 @@ foreach ($key in $pciKeys) {
         New-Item -Path $msiPath -Force -ErrorAction SilentlyContinue | Out-Null
         Set-ItemProperty -Path $msiPath -Name 'MSISupported' -Value 1 -Type DWord -ErrorAction SilentlyContinue
         $affPath = Join-Path $key.PSPath 'Interrupt Management\Affinity Policy'
-        New-Item -Path $affPath -Force -ErrorAction SilentlyContinue | Out-Null
-        Set-ItemProperty -Path $affPath -Name 'DevicePriority' -Value 3 -Type DWord -ErrorAction SilentlyContinue
+        if (Test-Path $affPath) {
+            Remove-ItemProperty -Path $affPath -Name 'DevicePriority' -ErrorAction SilentlyContinue
+        }
         $count++
     } elseif ($class -eq 'Net') {
         $msiPath = Join-Path $key.PSPath 'Interrupt Management\MessageSignaledInterruptProperties'
@@ -1040,35 +1067,29 @@ Write-Host '[OK] Da khoi phuc che do ngat thiet bi ve mac dinh.' -ForegroundColo
 
             // 24. CPU Affinity & Power Throttling Off
             string cpuWarning = hardware.IsAmdDualCcdX3D 
-                ? " (Phát hiện AMD Dual-CCD V-Cache: Tối ưu phân luồng 3D V-Cache)"
-                : " (Giải phóng TDP headroom để CPU bung Max Turbo Boost 4.0+ GHz)";
+                ? " (Phát hiện AMD Dual-CCD V-Cache: Bảo toàn Core Parking dồn toàn bộ luồng vào 3D V-Cache)"
+                : (hardware.IsAmdProcessor 
+                    ? " (Phát hiện AMD Ryzen: Tối ưu CPPC2 Preferred Cores để bung xung đỉnh 4.6 - 5.7+ GHz)"
+                    : " (Giải phóng TDP headroom để CPU bung Max Turbo Boost 4.0+ GHz)");
 
             list.Add(new OptimizationItem
             {
                 Id = 24,
                 Category = "⚡ Hiệu năng & CPU",
-                Title = "Điều Phối Luồng CPU & Power Throttling Off" + (hardware.IsAmdDualCcdX3D ? " [AMD X3D Aware]" : ""),
-                Description = "Tối ưu bộ điều phối luồng Windows Scheduler, tắt Power Throttling cho Foreground Apps giúp game nhận 100% sức mạnh tính toán. Giải phóng TDP và nhiệt độ để CPU bung Max Turbo Boost mà không bị nghẽn ở mức xung cơ bản 3.5 GHz." + cpuWarning,
-                Badges = new List<string> { hardware.IsAmdDualCcdX3D ? "Bảo Toàn 3D V-Cache" : "Dynamic Turbo Boost", "Tắt Power Throttling", "Ưu Tiên Game" },
+                Title = "Điều Phối Luồng CPU & Power Throttling Off" + (hardware.IsAmdDualCcdX3D ? " [AMD X3D Aware]" : (hardware.IsAmdProcessor ? " [AMD Ryzen Aware]" : "")),
+                Description = "Tối ưu bộ điều phối luồng Windows Scheduler thích ứng theo từng loại CPU. Giải phóng TDP và nhiệt độ để CPU bung Max Turbo Boost mà không bị nghẽn xung." + cpuWarning,
+                Badges = new List<string> { hardware.IsAmdDualCcdX3D ? "Bảo Toàn 3D V-Cache" : (hardware.IsAmdProcessor ? "AMD CPPC2 Max Boost" : "Dynamic Turbo Boost"), "Tối Ưu Phân Luồng", "Ưu Tiên Game" },
                 Icon = "🧠",
                 CheckStatus = () => NativeTweakService.GetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Power\PowerThrottling", "PowerThrottlingOff", 0) == 1,
                 NativeApply = () =>
                 {
-                    // Xóa ép buộc CPMINCORES 100 (nếu có trước đây) để các nhân nhàn rỗi được sleep C6/C7, cho phép CPU dồn toàn bộ TDP vào nhân chạy Game để đạt 4.0+ GHz
-                    try
-                    {
-                        string scheme = NativeTweakService.GetString(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes", "ActivePowerScheme", "");
-                        if (!string.IsNullOrEmpty(scheme))
-                        {
-                            using var pKey = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\{scheme}\54533251-82be-4824-96c1-47b60b740d00", true);
-                            pKey?.DeleteSubKeyTree("0cc5b647-c1df-4637-891a-dec35c318583", false);
-                        }
-                    }
-                    catch { }
+                    // Tối ưu trực tiếp trên scheme_current, bảo toàn cơ chế Core Parking tự nhiên để CPU dồn toàn bộ TDP bung xung 4.0 - 5.0+ GHz
                     NativeTweakService.RunCli("powercfg.exe", "-setactive scheme_current");
-
-                    NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Power\PowerThrottling", "PowerThrottlingOff", 1);
-                    NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\PriorityControl", "Win32PrioritySeparation", 38);
+                    
+                    // Với Intel Hybrid (P/E cores): Giữ nguyên cơ chế phân loại của Thread Director để không bị ném game sang E-Core
+                    // Với AMD và Intel Non-Hybrid: Tắt PowerThrottling cho ứng dụng game
+                    int ptOff = hardware.IsIntelHybrid ? 0 : 1;
+                    NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Power\PowerThrottling", "PowerThrottlingOff", ptOff);
                     return true;
                 },
                 NativeRevert = () =>
@@ -1077,18 +1098,13 @@ Write-Host '[OK] Da khoi phuc che do ngat thiet bi ve mac dinh.' -ForegroundColo
                     return true;
                 },
                 Script = @"
-$scheme = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes' -ErrorAction SilentlyContinue).ActivePowerScheme
-if ($scheme) {
-    Remove-Item ""HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\$scheme\54533251-82be-4824-96c1-47b60b740d00\0cc5b647-c1df-4637-891a-dec35c318583"" -Recurse -Force -ErrorAction SilentlyContinue
-    & powercfg.exe -setactive scheme_current 2>$null | Out-Null
-}
 Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling' -Name 'PowerThrottlingOff' -Value 1 -Type DWord -ErrorAction SilentlyContinue
-Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl' -Name 'Win32PrioritySeparation' -Value 38 -Type DWord -ErrorAction SilentlyContinue
-Write-Host '[OK] Da kich hoat Dynamic CPU Scheduling (Giai phong TDP cho Max Turbo Boost) va tat Power Throttling.' -ForegroundColor Green
+& powercfg.exe -setactive scheme_current 2>$null | Out-Null
+Write-Host '[OK] Da toi uu CPU Scheduling cho moi loai may (Bao toan TDP cho Max Turbo Boost).' -ForegroundColor Green
 ",
                 RevertScript = @"
 Remove-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling' -Name 'PowerThrottlingOff' -ErrorAction SilentlyContinue
-Write-Host '[OK] Da khoi phuc Power Throttling ve mac dinh.' -ForegroundColor Yellow
+Write-Host '[OK] Da khoi phuc CPU Scheduling ve mac dinh.' -ForegroundColor Yellow
 "
             });
 
@@ -1170,13 +1186,16 @@ Write-Host '[OK] Da khoi phuc thiet lap Windows AI & Copilot mac dinh.' -Foregro
             });
 
             // 27. 🛡️ Core Isolation / VBS Gaming Mode (LƯU Ý CHO VALORANT)
+            bool isWin11 = Environment.OSVersion.Version.Build >= 22000;
             list.Add(new OptimizationItem
             {
                 Id = 27,
                 Category = "⚡ Hiệu năng & CPU",
-                Title = "Chế Độ Gaming eSports: Core Isolation (HVCI) [Lưu Ý Cho Valorant]",
-                Description = "Tắt Toàn vẹn bộ nhớ (HVCI) giúp tăng 5-15% FPS CPU trong game thi đấu. LƯU Ý QUAN TRỌNG: Trên Windows 11, Riot Vanguard bắt buộc yêu cầu VBS/HVCI để khởi động game Valorant (tránh lỗi VAN9005 / VAN1067). Nếu bạn chơi Valorant trên Win 11, hãy GIỮ NGUYÊN (hoặc bật lại) mục này! (Cần Restart máy khi thay đổi để có hiệu lực).",
-                Badges = new List<string> { "Lưu Ý Vanguard Win 11", "Tăng 5-15% FPS CS2", "Cần Khởi Động Lại" },
+                Title = "Chế Độ Gaming eSports: Core Isolation (HVCI) " + (isWin11 ? "[Lưu Ý Vanguard Win 11]" : "[An Toàn Cho Win 10]"),
+                Description = isWin11
+                    ? "Tắt Toàn vẹn bộ nhớ (HVCI) giúp tăng 5-15% FPS CPU trong game thi đấu. LƯU Ý CHO WIN 11: Riot Vanguard trên Win 11 bắt buộc yêu cầu VBS/HVCI để khởi động Valorant (tránh lỗi VAN9005). Nếu chơi Valorant trên Win 11, hãy GIỮ NGUYÊN hoặc bật Vanguard Safe Mode!"
+                    : "Tắt Toàn vẹn bộ nhớ (HVCI) giúp tăng 5-15% FPS CPU. Trên Windows 10, Riot Vanguard không bắt buộc VBS, bạn có thể an toàn tắt để bung tối đa FPS cho mọi tựa game (Valorant, CS2, Apex). (Cần Restart máy để có hiệu lực).",
+                Badges = new List<string> { isWin11 ? "Vanguard Win 11 (Cần Bật)" : "An Toàn Win 10", "Tăng 5-15% FPS Gaming", "Cần Khởi Động Lại" },
                 Icon = "🛡️",
                 CheckStatus = () => NativeTweakService.GetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity", "Enabled", 1) == 0,
                 NativeApply = () =>
@@ -1239,27 +1258,10 @@ Write-Host '[OK] Da khoi phuc Shader Cache mac dinh.' -ForegroundColor Yellow
                 Id = 29,
                 Category = "🌐 Mạng & MSI",
                 Title = "DNS over HTTPS (DoH) Mã Hóa & Tối Ưu Độ Trễ TCP/UDP Gaming",
-                Description = "Kích hoạt giao thức phân giải tên miền mã hóa HTTPS (Cloudflare DoH 1.1.1.1) bảo mật tuyệt đối, giảm thời gian phản hồi máy chủ game và ép TCP AckFrequency = 1 trên mọi Card mạng để gửi xác nhận gói tin game tức thời.",
-                Badges = new List<string> { "DoH Mã Hóa", "TCP AckFrequency = 1", "Ping Siêu Ổn Định" },
+                Description = "Kích hoạt giao thức phân giải tên miền mã hóa HTTPS (Cloudflare DoH 1.1.1.1) bảo mật tuyệt đối, giảm thời gian phản hồi máy chủ game. Tối ưu cổng kết nối mạng và dọn dẹp bão ngắt TCP để bảo toàn băng thông UDP cho Valorant / CS2.",
+                Badges = new List<string> { "DoH Mã Hóa", "Tối Ưu UDP Gaming", "Ping Siêu Ổn Định" },
                 Icon = "🔒",
-                CheckStatus = () =>
-                {
-                    try
-                    {
-                        using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default);
-                        using var ifKey = baseKey.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces");
-                        if (ifKey != null)
-                        {
-                            foreach (var sub in ifKey.GetSubKeyNames())
-                            {
-                                using var subDev = ifKey.OpenSubKey(sub);
-                                if (subDev != null && (int)(subDev.GetValue("TcpAckFrequency") ?? 0) == 1) return true;
-                            }
-                        }
-                    }
-                    catch { }
-                    return false;
-                },
+                CheckStatus = () => NativeTweakService.GetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters", "Tcp1323Opts", 0) == 1,
                 NativeApply = () =>
                 {
                     // 1. Kích hoạt DoH thực thụ trên toàn bộ card mạng
@@ -1270,6 +1272,8 @@ Write-Host '[OK] Da khoi phuc Shader Cache mac dinh.' -ForegroundColor Yellow
                     NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters", "MaxUserPort", 65534);
                     NativeTweakService.SetDword(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters", "TcpTimedWaitDelay", 30);
 
+                    // Bảo vệ Valorant/CS2 (chạy UDP): Xóa bỏ TcpAckFrequency = 1 & TcpDelAckTicks = 0 nếu có
+                    // để triệt tiêu bão ngắt DPC (Interrupt Storm) do các app nền TCP (Discord, Riot Client) gây ra.
                     try
                     {
                         using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default);
@@ -1279,8 +1283,8 @@ Write-Host '[OK] Da khoi phuc Shader Cache mac dinh.' -ForegroundColor Yellow
                             foreach (var sub in ifKey.GetSubKeyNames())
                             {
                                 using var subDev = ifKey.OpenSubKey(sub, true);
-                                subDev?.SetValue("TcpAckFrequency", 1, RegistryValueKind.DWord);
-                                subDev?.SetValue("TcpDelAckTicks", 0, RegistryValueKind.DWord);
+                                subDev?.DeleteValue("TcpAckFrequency", false);
+                                subDev?.DeleteValue("TcpDelAckTicks", false);
                             }
                         }
                     }
@@ -1315,12 +1319,12 @@ Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters
 
 $interfaces = Get-ChildItem -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces' -ErrorAction SilentlyContinue
 foreach ($if in $interfaces) {
-    Set-ItemProperty -Path $if.PSPath -Name 'TcpAckFrequency' -Value 1 -Type DWord -ErrorAction SilentlyContinue
-    Set-ItemProperty -Path $if.PSPath -Name 'TcpDelAckTicks' -Value 0 -Type DWord -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $if.PSPath -Name 'TcpAckFrequency' -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $if.PSPath -Name 'TcpDelAckTicks' -ErrorAction SilentlyContinue
 }
 & netsh.exe dns add encryption server=1.1.1.1 dohtemplate=https://cloudflare-dns.com/dns-query autoupgrade=yes udpfallback=no 2>$null | Out-Null
 & netsh.exe dns add encryption server=1.0.0.1 dohtemplate=https://cloudflare-dns.com/dns-query autoupgrade=yes udpfallback=no 2>$null | Out-Null
-Write-Host '[OK] Da toi uu thong so TCP/UDP AckFrequency va DoH Network Stack tren toan bo Card mang.' -ForegroundColor Green
+Write-Host '[OK] Da toi uu thong so UDP Gaming Priority va DoH Network Stack tren toan bo Card mang.' -ForegroundColor Green
 ",
                 RevertScript = @"
 Remove-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'Tcp1323Opts' -ErrorAction SilentlyContinue

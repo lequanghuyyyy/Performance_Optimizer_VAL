@@ -4,7 +4,7 @@ chcp 65001 >nul
 title Windows 11 Performance Studio - Build Pipeline
 color 0b
 echo ================================================================
-echo    WINDOWS PERFORMANCE STUDIO v2.0 PRO - BUILD PIPELINE
+echo    WINDOWS PERFORMANCE STUDIO v2.1 PRO - BUILD PIPELINE
 echo ================================================================
 echo.
 echo [1/3] Dang kiem tra moi truong .NET SDK...

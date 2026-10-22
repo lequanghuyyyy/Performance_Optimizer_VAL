@@ -909,11 +909,11 @@
           const txt = document.getElementById('vsStatusText');
           if (data.connected) {
             dot.style.background = 'var(--accent-green)';
-            txt.innerText = 'VoiceStudio Sẵn Sàng (3900)';
+            txt.innerText = 'VoiceStudio Đã Kết Nối (3900)';
             txt.style.color = 'var(--accent-green)';
           } else {
             dot.style.background = '#eab308';
-            txt.innerText = 'VoiceStudio Offline (Port 3900)';
+            txt.innerText = 'Chưa bật VoiceStudio (Dùng AI Voice Dự Phòng)';
             txt.style.color = '#eab308';
           }
         }
@@ -921,6 +921,8 @@
         console.log('Error checking VoiceStudio:', e);
       }
     }
+
+    let pollInterval = null;
 
     async function startRender() {
       const renderBtn = document.getElementById('renderBtn');
@@ -933,10 +935,15 @@
         return;
       }
 
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+
       renderBtn.disabled = true;
       overlay.classList.add('active');
-      progressBar.style.width = '20%';
-      statusText.innerText = 'ĐANG TÁCH NÉT VÀ QUỸ ĐẠO BÚT...';
+      progressBar.style.width = '5%';
+      statusText.innerText = 'ĐANG KHỞI ĐỘNG TIẾN TRÌNH RENDER...';
 
       const formData = new FormData();
       formData.append('source_type', currentSource);
@@ -965,39 +972,56 @@
         }
       }
 
-      // Mô phỏng tiến trình mượt mà
-      let progress = 20;
-      const progressTimer = setInterval(() => {
-        if (progress < 90) {
-          progress += Math.random() * 8;
-          progressBar.style.width = Math.min(progress, 90) + '%';
-          if (progress > 50) statusText.innerText = 'ĐANG SYNTHESIZE FRAME & MÃ HÓA H.264...';
-        }
-      }, 400);
-
       try {
+        // Gửi yêu cầu khởi động tác vụ nền (Non-blocking: server trả lời trong 50ms)
         const response = await fetch('/api/render', { method: 'POST', body: formData });
-        clearInterval(progressTimer);
-
         if (!response.ok) {
-          throw new Error('Lỗi render video');
+          throw new Error('Lỗi khởi động tác vụ render trên server');
         }
 
-        const data = await response.json();
-        progressBar.style.width = '100%';
-        statusText.innerText = 'HOÀN THÀNH!';
+        const initialData = await response.json();
+        const taskId = initialData.task_id;
 
-        setTimeout(() => {
-          overlay.classList.remove('active');
-          renderBtn.disabled = false;
-          displayVideo(data.video_url);
-        }, 400);
+        // Bắt đầu chu trình Polling tiến độ thực tế theo thời gian thực (Real-time True Progress)
+        pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await fetch('/api/render/status/' + taskId);
+            if (!statusRes.ok) return;
+
+            const taskData = await statusRes.json();
+            progressBar.style.width = Math.max(5, taskData.progress) + '%';
+            if (taskData.message) {
+              statusText.innerText = taskData.message.toUpperCase();
+            }
+
+            if (taskData.status === 'completed') {
+              clearInterval(pollInterval);
+              pollInterval = null;
+              progressBar.style.width = '100%';
+              statusText.innerText = 'HOÀN THÀNH XUẤT SẮC!';
+
+              setTimeout(() => {
+                overlay.classList.remove('active');
+                renderBtn.disabled = false;
+                displayVideo(taskData.video_url);
+              }, 400);
+            } else if (taskData.status === 'failed') {
+              clearInterval(pollInterval);
+              pollInterval = null;
+              overlay.classList.remove('active');
+              renderBtn.disabled = false;
+              alert('Lỗi render video: ' + (taskData.message || 'Không xác định'));
+            }
+          } catch (pollErr) {
+            console.error('Lỗi kiểm tra tiến trình:', pollErr);
+          }
+        }, 450);
 
       } catch (err) {
-        clearInterval(progressTimer);
+        if (pollInterval) clearInterval(pollInterval);
         overlay.classList.remove('active');
         renderBtn.disabled = false;
-        alert('Đã xảy ra lỗi khi tạo video: ' + err.message);
+        alert('Đã xảy ra lỗi: ' + err.message);
       }
     }
 

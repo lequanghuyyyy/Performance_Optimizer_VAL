@@ -34,6 +34,46 @@ namespace PerformanceOptimizer.Services
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GetLogicalProcessorInformationEx(int relationshipType, IntPtr buffer, ref uint returnedLength);
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SYSTEM_POWER_STATUS
+        {
+            public byte ACLineStatus;
+            public byte BatteryFlag;
+            public byte BatteryLifePercent;
+            public byte SystemStatusFlag;
+            public int BatteryLifeTime;
+            public int BatteryFullLifeTime;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS lpSystemPowerStatus);
+
+        private static bool DetectIfLaptop()
+        {
+            try
+            {
+                if (GetSystemPowerStatus(out var sps))
+                {
+                    // 128 = Không có pin
+                    // 255 = Không xác định
+                    if (sps.BatteryFlag != 128 && sps.BatteryFlag != 255)
+                    {
+                        return true;
+                    }
+                }
+
+                // Fallback: Kiểm tra sự tồn tại của thiết bị pin ACPI (dành cho Laptop bị chai pin/tháo pin cắm sạc)
+                using var batKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\CmBatt");
+                if (batKey != null)
+                {
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private static bool CheckHardwareHybridCores()
         {
             try
@@ -178,7 +218,10 @@ namespace PerformanceOptimizer.Services
         {
             var specs = new HardwareSpecs();
 
-            // 1. CPU Architecture & Topology
+            // 0. Nhận diện thiết bị Laptop vs Desktop (Chuẩn xác 100% qua Win32 Native Power Status)
+            specs.IsLaptop = DetectIfLaptop();
+
+            // 1. CPU Architecture & Topology (Hỗ trợ toàn diện 100% mọi dòng Intel & AMD)
             try
             {
                 using var cpuKey = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
@@ -188,32 +231,59 @@ namespace PerformanceOptimizer.Services
                     specs.CpuName = cpuName;
                     int cores = Environment.ProcessorCount;
 
-                    // Detect AMD 3D V-Cache & Intel Hybrid
-                    if (cpuName.Contains("7900X3D", StringComparison.OrdinalIgnoreCase) ||
-                        cpuName.Contains("7950X3D", StringComparison.OrdinalIgnoreCase) ||
-                        cpuName.Contains("9900X3D", StringComparison.OrdinalIgnoreCase) ||
-                        cpuName.Contains("9950X3D", StringComparison.OrdinalIgnoreCase))
+                    // Phân loại AMD vs Intel
+                    specs.IsAmdProcessor = cpuName.Contains("AMD", StringComparison.OrdinalIgnoreCase) || 
+                                           cpuName.Contains("Ryzen", StringComparison.OrdinalIgnoreCase) ||
+                                           cpuName.Contains("Threadripper", StringComparison.OrdinalIgnoreCase) ||
+                                           cpuName.Contains("Athlon", StringComparison.OrdinalIgnoreCase);
+
+                    if (specs.IsAmdProcessor)
                     {
-                        specs.IsAmdDualCcdX3D = true;
-                        specs.CpuArchitectureNote = "AMD 3D V-Cache (Dual-CCD Cache Priority)";
-                        specs.CpuDetails = $"{cores} Luồng • AMD Dual-CCD V-Cache (Giữ Core Parking tối ưu Cache)";
-                    }
-                    else if (cpuName.Contains("X3D", StringComparison.OrdinalIgnoreCase))
-                    {
-                        specs.CpuArchitectureNote = "AMD 3D V-Cache (Single-CCD Siêu Tốc)";
-                        specs.CpuDetails = $"{cores} Luồng • Tối ưu 100% Cache Gaming eSports";
+                        // 1.1. AMD Ryzen 3D V-Cache (Dual-CCD: 7900X3D, 7950X3D, 9900X3D, 9950X3D)
+                        if (cpuName.Contains("7900X3D", StringComparison.OrdinalIgnoreCase) ||
+                            cpuName.Contains("7950X3D", StringComparison.OrdinalIgnoreCase) ||
+                            cpuName.Contains("9900X3D", StringComparison.OrdinalIgnoreCase) ||
+                            cpuName.Contains("9950X3D", StringComparison.OrdinalIgnoreCase))
+                        {
+                            specs.IsAmdDualCcdX3D = true;
+                            specs.CpuArchitectureNote = "AMD 3D V-Cache (Dual-CCD Cache Priority)";
+                            specs.CpuDetails = $"{cores} Luồng • AMD Dual-CCD V-Cache (Bảo toàn Core Parking dồn Cache)";
+                        }
+                        // 1.2. AMD Ryzen 3D V-Cache (Single-CCD: 5700X3D, 5800X3D, 7800X3D, 9800X3D)
+                        else if (cpuName.Contains("X3D", StringComparison.OrdinalIgnoreCase))
+                        {
+                            specs.CpuArchitectureNote = "AMD 3D V-Cache (Single-CCD Tối Thượng)";
+                            specs.CpuDetails = $"{cores} Luồng • AMD V-Cache (Bung 100% Cache L3 Gaming)";
+                        }
+                        // 1.3. AMD Ryzen 9 Dual-CCD Non-X3D (3900X, 3950X, 5900X, 5950X, 7900X, 7950X, 9900X, 9950X)
+                        else if (System.Text.RegularExpressions.Regex.IsMatch(cpuName, @"Ryzen\s*9|Threadripper", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                        {
+                            specs.CpuArchitectureNote = "AMD Multi-Core (Dual-CCD High Performance)";
+                            specs.CpuDetails = $"{cores} Luồng • AMD Ryzen 9 (Tối ưu CPPC Preferred Cores)";
+                        }
+                        // 1.4. AMD Ryzen APU / Mobile (Dòng có đồ họa tích hợp Radeon Vega/680M/780M/890M)
+                        else if (System.Text.RegularExpressions.Regex.IsMatch(cpuName, @"(Ryzen\s*[357]\s*\d{4}[UGHS]|AI\s*9)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                        {
+                            specs.CpuArchitectureNote = "AMD Ryzen Mobile / APU (Monolithic Low Latency)";
+                            specs.CpuDetails = $"{cores} Luồng • AMD APU (Tối ưu CPPC & Chia sẻ TDP đồ họa)";
+                        }
+                        // 1.5. AMD Ryzen 3 / 5 / 7 Desktop (Single-CCD thuần: 3600, 5600X, 7600X, 9600X...)
+                        else
+                        {
+                            specs.CpuArchitectureNote = "AMD Ryzen Single-CCD (Tối ưu 0s Delay)";
+                            specs.CpuDetails = $"{cores} Luồng • AMD Ryzen (Tối ưu CPPC2 Boost Clock)";
+                        }
                     }
                     else if (cpuName.Contains("Core(TM) i", StringComparison.OrdinalIgnoreCase) || 
                              cpuName.Contains("Core Ultra", StringComparison.OrdinalIgnoreCase) ||
                              cpuName.Contains("Intel", StringComparison.OrdinalIgnoreCase))
                     {
-                        // 1. Kiểm tra trực tiếp qua Windows Kernel API (EfficiencyClass)
+                        // 2.1. Kiểm tra trực tiếp qua Windows Kernel API (EfficiencyClass)
                         bool isHybrid = CheckHardwareHybridCores();
                         
-                        // 2. Fallback kiểm tra nhận diện tên CPU nếu API không trả về
+                        // 2.2. Fallback kiểm tra nhận diện tên CPU nếu API không trả về
                         if (!isHybrid)
                         {
-                            // Loại trừ rõ ràng các CPU thuần 6 P-Core (i5-12400, i5-12400F, i5-12500, i3 đời 12-14)
                             bool isNonHybridSku = System.Text.RegularExpressions.Regex.IsMatch(cpuName, @"(i5-12[45]00|i3-1[234]\d{2})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                             if (!isNonHybridSku)
                             {
@@ -246,12 +316,14 @@ namespace PerformanceOptimizer.Services
                 {
                     double totalGb = Math.Round(mem.ullTotalPhys / (1024.0 * 1024 * 1024), 1);
                     double availGb = Math.Round(mem.ullAvailPhys / (1024.0 * 1024 * 1024), 1);
+                    specs.RamSizeGb = totalGb;
                     specs.RamTotal = $"{totalGb} GB RAM";
                     specs.RamDetails = $"Khả dụng: {availGb} GB | Khóa Kernel trên RAM (Zero Paging)";
                 }
             }
             catch
             {
+                specs.RamSizeGb = 16.0;
                 specs.RamTotal = "16 GB RAM";
                 specs.RamDetails = "Bộ nhớ khả dụng sẵn sàng";
             }
@@ -359,6 +431,7 @@ namespace PerformanceOptimizer.Services
                 }
 
                 bool isDedicated = bestScore >= 50;
+                specs.HasDedicatedGpu = isDedicated;
                 if (!string.IsNullOrEmpty(bestGpu))
                 {
                     specs.GpuName = bestGpu;

@@ -10,7 +10,9 @@
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <AssemblyTitle>Windows Performance Studio</AssemblyTitle>
     <Product>Windows Performance Studio</Product>
-    <Version>2.0.0</Version>
+    <Version>2.1.0</Version>
+    <AssemblyVersion>2.1.0.0</AssemblyVersion>
+    <FileVersion>2.1.0.0</FileVersion>
     <Company>PerformanceOptimizer</Company>
     <Description>Windows Performance Studio Pro Edition</Description>
   </PropertyGroup>

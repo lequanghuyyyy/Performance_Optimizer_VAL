@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using PerformanceOptimizer.Models;
 
 namespace PerformanceOptimizer.Services
 {
@@ -18,6 +19,9 @@ namespace PerformanceOptimizer.Services
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "MouseSpeed", "0");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "MouseThreshold1", "0");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "MouseThreshold2", "0");
+                    SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "DoubleClickHeight", "4");
+                    SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "DoubleClickWidth", "4");
+                    SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "DoubleClickSpeed", "500");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Keyboard", "KeyboardDelay", "0");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Keyboard", "KeyboardSpeed", "31");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Accessibility\StickyKeys", "Flags", "506");
@@ -28,6 +32,9 @@ namespace PerformanceOptimizer.Services
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "MouseSpeed", "1");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "MouseThreshold1", "6");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "MouseThreshold2", "10");
+                    SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "DoubleClickHeight", "4");
+                    SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "DoubleClickWidth", "4");
+                    SetString(RegistryHive.CurrentUser, @"Control Panel\Mouse", "DoubleClickSpeed", "500");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Keyboard", "KeyboardDelay", "1");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Keyboard", "KeyboardSpeed", "31");
                     SetString(RegistryHive.CurrentUser, @"Control Panel\Accessibility\StickyKeys", "Flags", "510");
@@ -77,11 +84,10 @@ namespace PerformanceOptimizer.Services
                                         using var msiKey = intMgmt.CreateSubKey("MessageSignaledInterruptProperties", true);
                                         msiKey?.SetValue("MSISupported", 1, RegistryValueKind.DWord);
 
-                                        if (isDisplay)
-                                        {
-                                            using var affKey = intMgmt.CreateSubKey("Affinity Policy", true);
-                                            affKey?.SetValue("DevicePriority", 3, RegistryValueKind.DWord);
-                                        }
+                                        // Khong set DevicePriority = 3 (High) vi se cuop quyen ngat (starvation) cua USB Host Controller (chuot polling rate 1000Hz+)
+                                        // va Audio Controller, gay drop packet chuot, DPC spike va khung hinh bi giat/khung trong game.
+                                        using var affKey = intMgmt.OpenSubKey("Affinity Policy", true);
+                                        affKey?.DeleteValue("DevicePriority", false);
                                     }
                                     else
                                     {
@@ -115,29 +121,27 @@ namespace PerformanceOptimizer.Services
         #endregion
 
         #region Shell & Power Helpers
-        public static bool EnsureHighPerformancePowerPlan()
+        public static bool EnsureHighPerformancePowerPlan(HardwareSpecs? hardware = null)
         {
             try
             {
-                bool ok = RunCli("powercfg.exe", "/setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
-                if (!ok)
-                {
-                    // Fallback duplicate scheme cho laptop hoặc máy Modern Standby (S0)
-                    RunCli("powercfg.exe", "-duplicatescheme 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
-                    ok = RunCli("powercfg.exe", "/setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
-                }
-                if (!ok)
-                {
-                    // Fallback mở khóa Ultimate Performance
-                    RunCli("powercfg.exe", "-duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61");
-                    RunCli("powercfg.exe", "/setactive e9a42b02-d5df-448d-aa00-03f14749eb61");
-                }
+                hardware ??= HardwareService.DetectSpecs();
 
+                // 1. Tối ưu trực tiếp trên scheme_current để tương thích 100% với mọi loại máy (Cả Intel & AMD, Desktop & Laptop OEM)
+                // Tuyệt đối KHÔNG ép đổi sang High Performance (8c5e7fda) lạ vì sẽ phá vỡ AMD PPM Driver và kích hoạt EC Power Capping trên laptop!
                 RunCli("powercfg.exe", "-setacvalueindex scheme_current sub_processor PROCTHROTTLEMAX 100");
                 RunCli("powercfg.exe", "-setacvalueindex scheme_current sub_processor PROCTHROTTLEMIN 5");
+
+                // 2. Mở khóa Processor Performance Boost Mode = Aggressive (be337238-0d82-4146-a960-4f3749d470c7 = 2)
                 RunCli("powercfg.exe", "-setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 2");
-                RunCli("powercfg.exe", "-setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 45bcc044-d885-43e2-8605-ee0ec6e96b59 100");
-                RunCli("powercfg.exe", "-setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 0");
+
+                // 3. PERFEPP (Energy Performance Preference): Tinh chỉnh thích ứng (Adaptive) theo từng nền tảng phần cứng
+                // - Laptop (Intel / AMD): 25% (Best Performance mode chuẩn OEM, không bóp điện GPU rời NVIDIA/AMD, không kích hoạt EC Throttling)
+                // - AMD Desktop (Ryzen 3/5/7/9/X3D): 15% (Cho phép AMD CPPC2 dồn trọn VCore & TDP vào Preferred Cores để bung xung đỉnh 4.6 - 5.7+ GHz)
+                // - Intel Desktop: 10% (Tối đa phản hồi xung trong 1ms)
+                int epp = hardware.IsLaptop ? 25 : (hardware.IsAmdProcessor ? 15 : 10);
+                RunCli("powercfg.exe", $"-setacvalueindex scheme_current 54533251-82be-4824-96c1-47b60b740d00 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 {epp}");
+
                 RunCli("powercfg.exe", "-setactive scheme_current");
                 return true;
             }
