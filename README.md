@@ -62,3 +62,26 @@ A high-performance, hardware-adaptive Windows 10/11 optimization utility designe
 - **Bật LongPaths (>260 ký tự):** Loại bỏ lỗi đường dẫn dài khi clone Git repo hoặc build dự án NPM/Node.js.
 - **Bảo Toàn Hypervisor & Anti-Cheat:** Giữ nguyên `hypervisorlaunchtype auto`, đảm bảo 100% không bị ban bởi Vanguard, Easy Anti-Cheat, BattlEye và không lỗi WSL2/Docker.
 - **Tiện ích Chris Titus Tech:** Bật "End Task" trực tiếp khi chuột phải Taskbar, khôi phục Classic Context Menu và kích hoạt Windows Update Security Mode (hoãn tính năng lớn 365 ngày).
+======================================================
+# 1. Dừng service Windows Update để mở khóa file cache
+Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
+Stop-Service -Name bits -Force -ErrorAction SilentlyContinue
+
+# 2. Xóa cache tải về của Windows Update
+Remove-Item -Path "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+# 3. Xóa User Temp và System Temp
+Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+# 4. Khởi động lại dịch vụ
+Start-Service -Name wuauserv -ErrorAction SilentlyContinue
+Start-Service -Name bits -ErrorAction SilentlyContinue
+
+# 5. Dọn sạch thùng rác
+Clear-RecycleBin -DriveLetter C -Force -ErrorAction SilentlyContinue
+
+
+Dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase
+
+powercfg -h off
